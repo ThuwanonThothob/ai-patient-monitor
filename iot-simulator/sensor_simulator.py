@@ -11,7 +11,7 @@ client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, transport="websockets")
 
 print("⏳ กำลังเชื่อมต่อ MQTT...")
 client.connect(BROKER, PORT, 60)
-print("✅ เชื่อมต่อสำเร็จ! เริ่มส่งข้อมูลผู้ป่วยหลายคน...")
+print("เชื่อมต่อสำเร็จ! เริ่มส่งข้อมูลผู้ป่วยหลายคน...")
 
 # 🔴 กำหนดรายชื่อผู้ป่วยทั้งหมดที่ต้องการจำลอง
 patients = ["A001", "A002", "A003", "A004", "A005"]
@@ -20,8 +20,8 @@ try:
     while True:
         # 🔴 วนลูปส่งข้อมูลให้ผู้ป่วยทุกคนในรายการ
         for pt_id in patients:
-            hr = random.randint(60, 125)
-            spo2 = random.randint(85, 100)
+            hr = random.randint(60, 120)
+            spo2 = random.randint(90, 100)
 
             payload = {
                 "patient_id": pt_id,

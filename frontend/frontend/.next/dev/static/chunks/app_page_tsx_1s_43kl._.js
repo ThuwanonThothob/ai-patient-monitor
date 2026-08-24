@@ -111,7 +111,7 @@ function Dashboard() {
                         style: {
                             margin: "0 0 8px 0"
                         },
-                        children: "🏥 AI Patient Monitoring Dashboard"
+                        children: " AI Patient Monitoring Dashboard"
                     }, void 0, false, {
                         fileName: "[project]/app/page.tsx",
                         lineNumber: 121,
@@ -138,7 +138,7 @@ function Dashboard() {
                 columnNumber: 7
             }, this),
             Object.keys(patients).length === 0 ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
-                children: "⏳ กำลังรอรับสัญญาณชีพจากอุปกรณ์จำลอง..."
+                children: " กำลังรอรับสัญญาณชีพจากอุปกรณ์จำลอง..."
             }, void 0, false, {
                 fileName: "[project]/app/page.tsx",
                 lineNumber: 129,
@@ -436,7 +436,7 @@ function Dashboard() {
                                     cursor: "pointer",
                                     transition: "0.2s"
                                 },
-                                children: "🔍 ดูรายละเอียดเต็ม & บทบาท AI"
+                                children: "ดูรายละเอียดเต็ม & บทบาท AI"
                             }, void 0, false, {
                                 fileName: "[project]/app/page.tsx",
                                 lineNumber: 198,
@@ -496,7 +496,7 @@ function Dashboard() {
                                             color: "#4fc3f7"
                                         },
                                         children: [
-                                            "📋 แฟ้มประวัติและผลการวิเคราะห์ AI (เตียง ",
+                                            "แฟ้มประวัติและผลการวิเคราะห์ AI (เตียง ",
                                             selectedPatientId,
                                             ")"
                                         ]
@@ -539,7 +539,7 @@ function Dashboard() {
                                 padding: "30px 0",
                                 textAlign: "center"
                             },
-                            children: "⏳ AI กำลังรวบรวมข้อมูลและวิเคราะห์อาการ..."
+                            children: " AI กำลังรวบรวมข้อมูลและวิเคราะห์อาการ..."
                         }, void 0, false, {
                             fileName: "[project]/app/page.tsx",
                             lineNumber: 275,
@@ -700,7 +700,7 @@ function Dashboard() {
                                                         margin: 0,
                                                         color: "#40c4ff"
                                                     },
-                                                    children: "🤖 ผลการประเมินทางคลินิกโดย AI (AI Assessment)"
+                                                    children: "ผลการประเมินทางคลินิกโดย AI (AI Assessment)"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/page.tsx",
                                                     lineNumber: 297,
@@ -752,7 +752,7 @@ function Dashboard() {
                                             },
                                             children: [
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("strong", {
-                                                    children: "💡 คำแนะนำจากระบบ AI สำหรับทีมพยาบาล:"
+                                                    children: " คำแนะนำจากระบบ AI สำหรับทีมพยาบาล:"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/page.tsx",
                                                     lineNumber: 317,
@@ -796,7 +796,7 @@ function Dashboard() {
                                         margin: "0 0 10px 0",
                                         color: "#aaa"
                                     },
-                                    children: "📊 สถิติสัญญาณชีพย้อนหลัง (จากฐานข้อมูล SQLite)"
+                                    children: " สถิติสัญญาณชีพย้อนหลัง (จากฐานข้อมูล SQLite)"
                                 }, void 0, false, {
                                     fileName: "[project]/app/page.tsx",
                                     lineNumber: 327,
@@ -978,7 +978,7 @@ function Dashboard() {
                                         margin: "0 0 10px 0",
                                         color: "#aaa"
                                     },
-                                    children: "📋 บันทึกประวัติย้อนหลัง 15 รายการล่าสุด"
+                                    children: "บันทึกประวัติย้อนหลัง 15 รายการล่าสุด"
                                 }, void 0, false, {
                                     fileName: "[project]/app/page.tsx",
                                     lineNumber: 348,

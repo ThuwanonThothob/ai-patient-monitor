@@ -118,7 +118,7 @@ export default function Dashboard() {
   return (
     <div style={{ padding: "30px", fontFamily: "sans-serif", backgroundColor: "#121212", color: "#fff", minHeight: "100vh" }}>
       <header style={{ marginBottom: "25px", borderBottom: "1px solid #333", paddingBottom: "15px" }}>
-        <h1 style={{ margin: "0 0 8px 0" }}>🏥 AI Patient Monitoring Dashboard</h1>
+        <h1 style={{ margin: "0 0 8px 0" }}> AI Patient Monitoring Dashboard</h1>
         <p style={{ margin: 0, color: "#aaa" }}>
           สถานะระบบ: {connected ? "🟢 ออนไลน์ (กำลังเชื่อมต่อและประมวลผล Real-time)" : "🔴 ขาดการติดต่อกับเซิร์ฟเวอร์"}
         </p>
@@ -126,7 +126,7 @@ export default function Dashboard() {
 
       {/* Grid การ์ดหน้าแรก */}
       {Object.keys(patients).length === 0 ? (
-        <p>⏳ กำลังรอรับสัญญาณชีพจากอุปกรณ์จำลอง...</p>
+        <p> กำลังรอรับสัญญาณชีพจากอุปกรณ์จำลอง...</p>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: "20px" }}>
           {Object.values(patients)
@@ -210,14 +210,14 @@ export default function Dashboard() {
                     transition: "0.2s",
                   }}
                 >
-                  🔍 ดูรายละเอียดเต็ม & บทบาท AI
+                  ดูรายละเอียดเต็ม & บทบาท AI
                 </button>
               </div>
             ))}
         </div>
       )}
 
-      {/* 📌 MODAL แสดงรายละเอียดเต็มของผู้ป่วย + วิเคราะห์ AI */}
+      {/*  MODAL แสดงรายละเอียดเต็มของผู้ป่วย + วิเคราะห์ AI */}
       {selectedPatientId && (
         <div
           style={{
@@ -251,7 +251,7 @@ export default function Dashboard() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #333", paddingBottom: "15px" }}>
               <div>
                 <h2 style={{ margin: 0, color: "#4fc3f7" }}>
-                  📋 แฟ้มประวัติและผลการวิเคราะห์ AI (เตียง {selectedPatientId})
+                  แฟ้มประวัติและผลการวิเคราะห์ AI (เตียง {selectedPatientId})
                 </h2>
               </div>
               <button
@@ -272,7 +272,7 @@ export default function Dashboard() {
             </div>
 
             {loadingDetail || !detailedData ? (
-              <p style={{ padding: "30px 0", textAlign: "center" }}>⏳ AI กำลังรวบรวมข้อมูลและวิเคราะห์อาการ...</p>
+              <p style={{ padding: "30px 0", textAlign: "center" }}> AI กำลังรวบรวมข้อมูลและวิเคราะห์อาการ...</p>
             ) : (
               <div style={{ marginTop: "20px" }}>
                 {/* 1. ข้อมูลส่วนตัวผู้ป่วย */}
@@ -283,7 +283,7 @@ export default function Dashboard() {
                   <div><span style={{ color: "#aaa" }}>แพทย์ผู้ดูแล:</span> <strong>{detailedData.profile.doctor}</strong></div>
                 </div>
 
-                {/* 2. 🤖 สรุปผลการประเมินโดย AI (Clinical AI Assessment) */}
+                {/* 2.  สรุปผลการประเมินโดย AI (Clinical AI Assessment) */}
                 <div
                   style={{
                     backgroundColor: "#1b263b",
@@ -294,7 +294,7 @@ export default function Dashboard() {
                   }}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-                    <h3 style={{ margin: 0, color: "#40c4ff" }}>🤖 ผลการประเมินทางคลินิกโดย AI (AI Assessment)</h3>
+                    <h3 style={{ margin: 0, color: "#40c4ff" }}>ผลการประเมินทางคลินิกโดย AI (AI Assessment)</h3>
                     <span
                       style={{
                         backgroundColor: detailedData.ai_assessment.risk_score >= 70 ? "#ff4d4d" : detailedData.ai_assessment.risk_score >= 40 ? "#ffaa00" : "#4dff4d",
@@ -314,7 +314,7 @@ export default function Dashboard() {
                   </p>
 
                   <div style={{ marginTop: "12px", fontSize: "0.9rem" }}>
-                    <strong>💡 คำแนะนำจากระบบ AI สำหรับทีมพยาบาล:</strong>
+                    <strong> คำแนะนำจากระบบ AI สำหรับทีมพยาบาล:</strong>
                     <ul style={{ margin: "5px 0 0 0", paddingLeft: "20px", color: "#b0bec5" }}>
                       {detailedData.ai_assessment.recommendations.map((rec, idx) => (
                         <li key={idx} style={{ marginBottom: "3px" }}>{rec}</li>
@@ -324,7 +324,7 @@ export default function Dashboard() {
                 </div>
 
                 {/* 3. สถิติสำคัญย้อนหลัง */}
-                <h4 style={{ margin: "0 0 10px 0", color: "#aaa" }}>📊 สถิติสัญญาณชีพย้อนหลัง (จากฐานข้อมูล SQLite)</h4>
+                <h4 style={{ margin: "0 0 10px 0", color: "#aaa" }}> สถิติสัญญาณชีพย้อนหลัง (จากฐานข้อมูล SQLite)</h4>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "10px", marginBottom: "20px", textAlign: "center" }}>
                   <div style={{ background: "#141414", padding: "10px", borderRadius: "6px" }}>
                     <div style={{ fontSize: "0.75rem", color: "#888" }}>HR เฉลี่ย</div>
@@ -345,7 +345,7 @@ export default function Dashboard() {
                 </div>
 
                 {/* 4. ตารางบันทึกประวัติย้อนหลัง */}
-                <h4 style={{ margin: "0 0 10px 0", color: "#aaa" }}>📋 บันทึกประวัติย้อนหลัง 15 รายการล่าสุด</h4>
+                <h4 style={{ margin: "0 0 10px 0", color: "#aaa" }}>บันทึกประวัติย้อนหลัง 15 รายการล่าสุด</h4>
                 <div style={{ maxHeight: "180px", overflowY: "auto", border: "1px solid #333", borderRadius: "6px" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "0.85rem" }}>
                     <thead>

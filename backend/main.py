@@ -44,7 +44,7 @@ def save_to_db(patient_id: str, hr: int, spo2: int, status: str, ts: float):
     conn.commit()
     conn.close()
 
-# 🤖 2. สมอง AI วิเคราะห์และประเมินอาการเชิงลึก (AI Clinical Intelligence)
+#  2. สมอง AI วิเคราะห์และประเมินอาการเชิงลึก (AI Clinical Intelligence)
 def generate_ai_assessment(patient_id: str, history_rows: list):
     profile = PATIENT_PROFILES.get(patient_id, {"name": "ไม่ทราบ", "age": 0, "condition": "ไม่ระบุ"})
     
@@ -89,13 +89,13 @@ def generate_ai_assessment(patient_id: str, history_rows: list):
 
     if risk_score >= 70:
         risk_level = "HIGH RISK (วิกฤต)"
-        ai_summary = f"🚨 AI เตือนภัยระดับสูง: ผู้ป่วยมีแนวโน้มภาวะแทรกซ้อนจาก {profile['condition']} ({' / '.join(findings)})"
+        ai_summary = f" AI เตือนภัยระดับสูง: ผู้ป่วยมีแนวโน้มภาวะแทรกซ้อนจาก {profile['condition']} ({' / '.join(findings)})"
     elif risk_score >= 40:
         risk_level = "MEDIUM RISK (เฝ้าระวัง)"
-        ai_summary = f"⚠️ AI แนะนำเฝ้าระวัง: พบความผิดปกติเบื้องต้น ({' / '.join(findings)})"
+        ai_summary = f" AI แนะนำเฝ้าระวัง: พบความผิดปกติเบื้องต้น ({' / '.join(findings)})"
     else:
         risk_level = "LOW RISK (ปกติ)"
-        ai_summary = f"✅ AI ประเมิน: สัญญาณชีพอยู่ในเกณฑ์ปลอดภัย สอดคล้องกับแผนการรักษา"
+        ai_summary = f" AI ประเมิน: สัญญาณชีพอยู่ในเกณฑ์ปลอดภัย สอดคล้องกับแผนการรักษา"
         recommendations.append("บันทึกสัญญาณชีพตามรอบปกติ")
 
     return {
@@ -138,10 +138,10 @@ main_loop = None
 
 def evaluate_risk(hr: int, spo2: int):
     if spo2 < 90 or hr > 120 or hr < 50:
-        return "CRITICAL", "🚨 วิกฤต: ค่าสัญญาณชีพผิดปกติรุนแรง!"
+        return "CRITICAL", " วิกฤต: ค่าสัญญาณชีพผิดปกติรุนแรง!"
     elif spo2 < 95 or hr > 100:
-        return "WARNING", "⚠️ เตือน: ค่า SpO2 ต่ำหรือหัวใจเต้นเร็ว"
-    return "NORMAL", "✅ สัญญาณชีพปกติ"
+        return "WARNING", " เตือน: ค่า SpO2 ต่ำหรือหัวใจเต้นเร็ว"
+    return "NORMAL", " สัญญาณชีพปกติ"
 
 def on_message(client, userdata, msg):
     try:
@@ -170,7 +170,7 @@ def on_message(client, userdata, msg):
             asyncio.run_coroutine_threadsafe(manager.broadcast(response_data), main_loop)
             
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f" Error: {e}")
 
 BROKER = "broker.emqx.io"
 PORT = 8083
@@ -187,7 +187,7 @@ async def lifespan(app: FastAPI):
     mqtt_client.connect(BROKER, PORT, 60)
     mqtt_client.subscribe(TOPIC)
     mqtt_client.loop_start()
-    print("✅ Backend + AI Clinical Assessment Engine พร้อมทำงาน")
+    print(" Backend + AI Clinical Assessment Engine พร้อมทำงาน")
     yield
     mqtt_client.loop_stop()
     mqtt_client.disconnect()

@@ -14,7 +14,7 @@ client.connect(BROKER, PORT, 60)
 print("เชื่อมต่อสำเร็จ! เริ่มส่งข้อมูลผู้ป่วยหลายคน...")
 
 # 🔴 กำหนดรายชื่อผู้ป่วยทั้งหมดที่ต้องการจำลอง
-patients = ["A001", "A002", "A003", "A004", "A005"]
+patients = ["A001", "A002", "A003", "A004", "A005","A006", "A007", "A008", "A009", "A010"]
 
 try:
     while True:
@@ -33,8 +33,8 @@ try:
             client.publish(TOPIC, json.dumps(payload))
             print(f"Send Data: {pt_id} | HR={hr}, SpO2={spo2}")
         
-        # ส่งครบทุกคนแล้ว รอก่อนส่งรอบถัดไป 2 วินาที
-        time.sleep(5)
+        # ส่งครบทุกคนแล้ว รอก่อนส่งรอบถัดไป 10 วินาที
+        time.sleep(10)
 
 except KeyboardInterrupt:
     print("\n Simulation stopped.")

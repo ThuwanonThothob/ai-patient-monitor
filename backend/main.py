@@ -1,11 +1,19 @@
 import json
 import sqlite3
 import asyncio
+import time
+from matplotlib.patheffects import Stroke
 import paho.mqtt.client as mqtt
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List
 from contextlib import asynccontextmanager
+#เชื่อมai
+from ai_models.anomaly import detect_anomaly
+from ai_models.risk_score import calculate_risk_score
+from ai_models.forecasting import predict_future_vitals
+from ai_models.llm_summary import chat_with_patient_data
+from pydantic import  BaseModel # ใช้สำหรับรับค่า API Key จากหน้าเว็บ
 
 DB_NAME = "vitals.db"
 
@@ -16,6 +24,11 @@ PATIENT_PROFILES = {
     "A003": {"name": "นายอนันต์ รุ่งเรือง", "age": 58, "gender": "ชาย", "condition": "ความดันโลหิตสูง / เฝ้าระวังหลังผ่าตัด", "doctor": "พญ. นภา สดใส"},
     "A004": {"name": "นางสาวปราณี สดใส", "age": 45, "gender": "หญิง", "condition": "หอบหืดรุนแรง (Severe Asthma)", "doctor": "พญ. นภา สดใส"},
     "A005": {"name": "นายกิตติศักดิ์ มั่นคง", "age": 80, "gender": "ชาย", "condition": "ภาวะติดเชื้อในกระแสเลือด (Sepsis Risk)", "doctor": "นพ. วิชัย รักษาดี"},
+    "A006": {"name": "นางสาวอรทัย แสงทอง", "age": 68, "gender": "หญิง", "condition": "โรคเบาหวาน / ความดันโลหิตสูง", "doctor": "พญ. นภา สดใส"},
+    "A007": {"name": "นายปรีชา กล้าหาญ", "age": 55, "gender": "ชาย", "condition": "โรคไตเรื้อรัง (CKD)", "doctor": "นพ. วิชัย รักษาดี"},
+    "A008": {"name": "นางสาวจินตนา ใจงาม", "age": 62, "gender": "หญิง", "condition": "โรคหลอดเลือดสมอง (Stroke Risk)", "doctor": "พญ. นภา สดใส"},
+    "A009": {"name": "นายสมบูรณ์ แก้วใจ", "age": 70, "gender": "ชาย", "condition": "โรคหัวใจเต้นผิดจังหวะ (Arrhythmia)", "doctor": "นพ. วิชัย รักษาดี"},
+    "A010": {"name": "นางสาวสุดารัตน์ แก้วใส", "age": 60, "gender": "หญิง", "condition": "โรคปอดเรื้อรัง / ภาวะหอบหืด", "doctor": "พญ. นภา สดใส"}
 }
 
 def init_db():
@@ -43,6 +56,23 @@ def save_to_db(patient_id: str, hr: int, spo2: int, status: str, ts: float):
     )
     conn.commit()
     conn.close()
+
+#ไว้ลบข้อมูลเก่า
+def cleanup_old_logs(days_to_keep=1):
+    try:
+        cutoff_timestamp = time.time() - (days_to_keep * 24 * 60 * 60)
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM vital_logs WHERE timestamp < ?", (cutoff_timestamp,))
+        deleted_count = cursor.rowcount
+        conn.commit()
+        conn.close()
+
+        if deleted_count > 0:
+            print(f"deleted {deleted_count} old log entries older than {days_to_keep} days.")
+    except Exception as e:
+        print(f"Error cleaning up old logs: {e}")
+
 
 #  2. สมอง AI วิเคราะห์และประเมินอาการเชิงลึก (AI Clinical Intelligence)
 def generate_ai_assessment(patient_id: str, history_rows: list):
@@ -143,6 +173,8 @@ def evaluate_risk(hr: int, spo2: int):
         return "WARNING", " เตือน: ค่า SpO2 ต่ำหรือหัวใจเต้นเร็ว"
     return "NORMAL", " สัญญาณชีพปกติ"
 
+# อย่าลืม Import ฟังก์ชัน AI ไว้ด้านบนสุดของไฟล์ main.py
+# from ai_models.anomaly import detect_anomaly 
 def on_message(client, userdata, msg):
     try:
         payload = json.loads(msg.payload.decode())
@@ -152,9 +184,19 @@ def on_message(client, userdata, msg):
         ts = payload.get("timestamp")
         
         status, alert_msg = evaluate_risk(hr, spo2)
+        is_anomaly = detect_anomaly(hr, spo2)
+        
+        if is_anomaly and status == "Normal":
+            status = "Warning"
+            alert_msg = "AI ตรวจพบจังหวะการเต้นของหัวใจผิดปกติ (Anomaly)"
+            
         save_to_db(p_id, hr, spo2, status, ts)
         
-        profile = PATIENT_PROFILES.get(p_id, {"name": f"ผู้ป่วย {p_id}", "age": "-", "gender": "-", "condition": "-"})
+        profile = PATIENT_PROFILES.get(p_id, {"name": f"ผู้ป่วย {p_id}", "age": 50, "gender": "-", "condition": "-"})
+        
+        # ⚡ 1. เรียกใช้ AI: ประเมินความเสี่ยง 
+        patient_age = profile.get("age", 50)
+        risk_percent = calculate_risk_score(hr, spo2, age=patient_age if isinstance(patient_age, int) else 50)
 
         response_data = {
             "patient_id": p_id,
@@ -163,14 +205,16 @@ def on_message(client, userdata, msg):
             "spo2": spo2,
             "status": status,
             "alert_message": alert_msg,
-            "timestamp": ts
+            "timestamp": ts,
+            "is_anomaly": is_anomaly,
+            "risk_percent": risk_percent # 👈 ส่งคะแนนความเสี่ยงไปให้หน้าเว็บ
         }
 
         if main_loop and main_loop.is_running():
             asyncio.run_coroutine_threadsafe(manager.broadcast(response_data), main_loop)
             
     except Exception as e:
-        print(f" Error: {e}")
+        print(f"MQTT Error: {e}")
 
 BROKER = "broker.emqx.io"
 PORT = 8083
@@ -218,20 +262,48 @@ def get_patient_details(patient_id: str):
     rows = cursor.fetchall()
     conn.close()
 
-    # สรุปผลด้วย AI
     ai_assessment = generate_ai_assessment(patient_id, rows)
 
     history_list = [
         {"heart_rate": r[0], "spo2": r[1], "status": r[2], "timestamp": r[3]}
         for r in rows
     ]
+    
+    # ⚡ 2. เรียกใช้ AI: พยากรณ์ค่า HR/SpO2 ล่วงหน้า (สลับเอาข้อมูลเก่าสุดขึ้นก่อนเพื่อดูกราฟ)
+    history_hr = [r[0] for r in rows][::-1]
+    history_spo2 = [r[1] for r in rows][::-1]
+    forecast = predict_future_vitals(history_hr, history_spo2, future_steps=3)
 
     return {
         "patient_id": patient_id,
         "profile": profile,
         "ai_assessment": ai_assessment,
-        "history": history_list
+        "history": history_list,
+        "forecast": forecast # 👈 ส่งผลพยากรณ์ไปแสดงใน Modal
     }
+#GEMINI API Key Model
+class ChatMessage(BaseModel):
+    message: str
+
+@app.post("/api/patient/{patient_id}/chat")
+def patient_chat_api(patient_id: str, request: ChatMessage):
+    profile = PATIENT_PROFILES.get(patient_id, {"name": "ไม่ทราบชื่อ", "condition": "ไม่ระบุ"})
+    
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("SELECT heart_rate, spo2 FROM vital_logs WHERE patient_id = ? ORDER BY id DESC LIMIT 30", (patient_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    
+    # ส่งข้อความและข้อมูลผู้ป่วยไปให้ Gemini คิดคำตอบ
+    reply = chat_with_patient_data(
+        patient_id=patient_id, 
+        profile=profile, 
+        history_rows=rows, 
+        user_message=request.message
+    )
+    
+    return {"reply": reply}
 
 @app.websocket("/ws/vitals")
 async def websocket_endpoint(websocket: WebSocket):

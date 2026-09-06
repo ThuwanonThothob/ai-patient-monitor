@@ -1,17 +1,19 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { LineChart, Line, ResponsiveContainer } from "recharts";
 
 // ... (interface เดิม) ...
 interface PatientProfile { name: string; age: number; gender: string; condition: string; doctor: string; }
 interface HistoryPoint { time: string; heart_rate: number; spo2: number; is_anomaly?: boolean; }
 interface PatientData { patient_id: string; patient_profile?: PatientProfile; heart_rate: number; spo2: number; status: "NORMAL" | "WARNING" | "CRITICAL"; alert_message: string; is_anomaly?: boolean; risk_percent?: number; history: HistoryPoint[]; }
-interface DetailedPatientData { patient_id: string; profile: PatientProfile; ai_assessment: any; forecast: { predicted_hr: number | null; predicted_spo2: number | null; }; history: { heart_rate: number; spo2: number; status: string; timestamp: number }[]; }
+interface DetailedPatientData { patient_id: string; profile: PatientProfile; ai_assessment: unknown; forecast: { predicted_hr: number | null; predicted_spo2: number | null; }; history: { heart_rate: number; spo2: number; status: string; timestamp: number }[]; }
+interface AgentAlert { type: "agent_alert"; patient_id: string; severity: "warning" | "critical"; reason: string; recommended_next_step: string; timestamp: number; }
 
 export default function Dashboard() {
   const [patients, setPatients] = useState<{ [key: string]: PatientData }>({});
   const [connected, setConnected] = useState(false);
+  const [agentAlerts, setAgentAlerts] = useState<AgentAlert[]>([]);
   
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [detailedData, setDetailedData] = useState<DetailedPatientData | null>(null);
@@ -34,6 +36,10 @@ export default function Dashboard() {
     ws.onclose = () => setConnected(false);
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
+      if (data.type === "agent_alert") {
+        setAgentAlerts((previous) => [data as AgentAlert, ...previous].slice(0, 5));
+        return;
+      }
       const timeStr = new Date(data.timestamp * 1000).toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
       const newPoint: HistoryPoint = { time: timeStr, heart_rate: data.heart_rate, spo2: data.spo2, is_anomaly: data.is_anomaly };
       
@@ -56,8 +62,8 @@ export default function Dashboard() {
     try {
       const res = await fetch(`http://localhost:8000/api/patient/${patientId}/details`);
       setDetailedData(await res.json());
-    } catch (err) {
-      console.error("Fetch error:", err);
+    } catch {
+      console.error("Fetch error");
     } finally {
       setLoadingDetail(false);
     }
@@ -81,7 +87,7 @@ export default function Dashboard() {
       });
       const data = await res.json();
       setChatHistory(prev => [...prev, { sender: "ai", text: data.reply }]);
-    } catch (err) {
+    } catch {
       setChatHistory(prev => [...prev, { sender: "ai", text: "❌ เกิดข้อผิดพลาด ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้" }]);
     } finally {
       setIsChatting(false);
@@ -97,6 +103,12 @@ export default function Dashboard() {
         <h1 style={{ margin: "0 0 8px 0" }}>🏥 AI Patient Monitoring Dashboard</h1>
         <p style={{ margin: 0, color: "#aaa" }}>สถานะระบบ: {connected ? "🟢 ออนไลน์" : "🔴 ขาดการติดต่อ"}</p>
       </header>
+
+      {agentAlerts.map((alert, index) => (
+        <div key={`${alert.patient_id}-${alert.timestamp}-${index}`} style={{ marginBottom: "12px", padding: "12px", borderRadius: "8px", background: alert.severity === "critical" ? "#521b1b" : "#4d3b13", borderLeft: `5px solid ${alert.severity === "critical" ? "#ff4d4d" : "#ffaa00"}` }}>
+          <strong>Agent review proposal — เตียง {alert.patient_id}</strong>: {alert.reason} {alert.recommended_next_step}
+        </div>
+      ))}
 
       {/* หน้าการ์ดผู้ป่วย (เหมือนเดิม) */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: "20px" }}>

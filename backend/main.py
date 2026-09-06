@@ -13,6 +13,7 @@ from ai_models.anomaly import detect_anomaly
 from ai_models.risk_score import calculate_risk_score
 from ai_models.forecasting import predict_future_vitals
 from ai_models.llm_summary import chat_with_patient_data
+from ai_models.agent_workflow import VitalAlertAgent, VitalEvent
 from pydantic import  BaseModel # ใช้สำหรับรับค่า API Key จากหน้าเว็บ
 
 DB_NAME = "vitals.db"
@@ -165,6 +166,8 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 main_loop = None
+agent_queue: asyncio.Queue[VitalEvent] | None = None
+alert_agent = VitalAlertAgent()
 
 def evaluate_risk(hr: int, spo2: int):
     if spo2 < 90 or hr > 120 or hr < 50:
@@ -181,13 +184,13 @@ def on_message(client, userdata, msg):
         p_id = payload["patient_id"]
         hr = payload["heart_rate"]
         spo2 = payload["spo2"]
-        ts = payload.get("timestamp")
+        ts = payload.get("timestamp", time.time())
         
         status, alert_msg = evaluate_risk(hr, spo2)
         is_anomaly = detect_anomaly(hr, spo2)
         
-        if is_anomaly and status == "Normal":
-            status = "Warning"
+        if is_anomaly and status == "NORMAL":
+            status = "WARNING"
             alert_msg = "AI ตรวจพบจังหวะการเต้นของหัวใจผิดปกติ (Anomaly)"
             
         save_to_db(p_id, hr, spo2, status, ts)
@@ -212,9 +215,51 @@ def on_message(client, userdata, msg):
 
         if main_loop and main_loop.is_running():
             asyncio.run_coroutine_threadsafe(manager.broadcast(response_data), main_loop)
+            # The MQTT callback remains fast: agent work happens in a bounded
+            # asyncio queue after the normal real-time message is broadcast.
+            if agent_queue is not None:
+                asyncio.run_coroutine_threadsafe(
+                    enqueue_agent_event(
+                        VitalEvent(
+                            patient_id=p_id,
+                            heart_rate=hr,
+                            spo2=spo2,
+                            timestamp=ts,
+                            status=status,
+                            is_anomaly=is_anomaly,
+                            risk_percent=risk_percent,
+                        )
+                    ),
+                    main_loop,
+                )
             
     except Exception as e:
         print(f"MQTT Error: {e}")
+
+
+async def enqueue_agent_event(event: VitalEvent) -> None:
+    """Drop the oldest pending event under load rather than stalling MQTT."""
+    if agent_queue is None:
+        return
+    if agent_queue.full():
+        agent_queue.get_nowait()
+        agent_queue.task_done()
+    agent_queue.put_nowait(event)
+
+
+async def run_agent_worker() -> None:
+    """Broadcast alert proposals without blocking vital-sign delivery."""
+    assert agent_queue is not None
+    while True:
+        event = await agent_queue.get()
+        try:
+            alert = alert_agent.assess(event)
+            if alert:
+                await manager.broadcast(alert)
+        except Exception as exc:
+            print(f"Agent workflow error: {exc}")
+        finally:
+            agent_queue.task_done()
 
 BROKER = "broker.emqx.io"
 PORT = 8083
@@ -225,14 +270,21 @@ mqtt_client.on_message = on_message
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global main_loop
+    global main_loop, agent_queue
     init_db()
     main_loop = asyncio.get_running_loop()
+    agent_queue = asyncio.Queue(maxsize=200)
+    agent_worker = asyncio.create_task(run_agent_worker())
     mqtt_client.connect(BROKER, PORT, 60)
     mqtt_client.subscribe(TOPIC)
     mqtt_client.loop_start()
     print(" Backend + AI Clinical Assessment Engine พร้อมทำงาน")
     yield
+    agent_worker.cancel()
+    try:
+        await agent_worker
+    except asyncio.CancelledError:
+        pass
     mqtt_client.loop_stop()
     mqtt_client.disconnect()
 

@@ -34,7 +34,7 @@ try:
             print(f"Send Data: {pt_id} | HR={hr}, SpO2={spo2}")
         
         # ส่งครบทุกคนแล้ว รอก่อนส่งรอบถัดไป 10 วินาที
-        time.sleep(10)
+        time.sleep(3)
 
 except KeyboardInterrupt:
     print("\n Simulation stopped.")

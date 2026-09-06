@@ -1,20 +1,22 @@
 import os
-import google.generativeai as genai
 
-API_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyCFn-ZubmqWpvVkK-Lr5PR9HETP1G-a69c")
+from google import genai
 
-print("🤖 กำลังเตรียมระบบ AI สรุปรายงานการแพทย์ (LLM Gemini)...")
+# Keep credentials out of source control: export GEMINI_API_KEY before starting FastAPI.
+API_KEY = os.environ.get("GEMINI_API_KEY")
+
+print("🤖 กำลังเตรียมระบบ AI ผู้ช่วยถาม-ตอบ (Gemini Chat - อัปเดตใหม่)...")
 
 def chat_with_patient_data(patient_id: str, profile: dict, history_rows: list, user_message: str) -> str:
     """
-    รับคำถามจากผู้ใช้ และป้อนข้อมูลผู้ป่วยให้ AI ช่วยตอบ
+    รับคำถามจากผู้ใช้ และป้อนข้อมูลผู้ป่วยให้ AI ช่วยตอบ (อัปเดตใช้ google-genai)
     """
-    if not API_KEY or API_KEY.startswith("ใส่_API"):
-        return "⚠️ กรุณาใส่ API Key ในไฟล์ llm_summary.py ก่อนใช้งาน"
+    if not API_KEY:
+        return "⚠️ ยังไม่ได้ตั้งค่า GEMINI_API_KEY บนเซิร์ฟเวอร์"
 
     try:
-        genai.configure(api_key=API_KEY)
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # กำหนด Client ด้วยวิธีใหม่
+        client = genai.Client(api_key=API_KEY)
         
         # คำนวณค่าเฉลี่ยล่าสุดให้ AI รู้อาการปัจจุบัน
         if history_rows:
@@ -39,7 +41,11 @@ def chat_with_patient_data(patient_id: str, profile: dict, history_rows: list, u
         คำถามจากผู้ใช้งาน: "{user_message}"
         """
         
-        response = model.generate_content(prompt)
+        # เรียกใช้โมเดลด้วยคำสั่งแบบใหม่
+        response = client.models.generate_content(
+            model='gemini-1.5-flash',
+            contents=prompt
+        )
         return response.text.strip()
         
     except Exception as e:

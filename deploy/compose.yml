@@ -1,0 +1,155 @@
+name: smart-ward-test
+
+x-common: &common
+  restart: unless-stopped
+  init: true
+  security_opt:
+    - no-new-privileges:true
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+x-backend: &backend
+  <<: *common
+  user: "10001:10001"
+  image: smart-ward-backend:local
+  build:
+    context: ..
+    dockerfile: deploy/Dockerfile.backend
+  env_file: .env
+  environment:
+    WARD_DB_PATH: ${WARD_DB_PATH:-/var/lib/smart-ward/ward-test.db}
+    WARD_VAPID_PRIVATE_KEY_FILE: /run/secrets/webpush_private
+  volumes:
+    - ward-data:/var/lib/smart-ward
+    - ward-backups:/backups:ro
+    - type: bind
+      source: ./artifacts/models
+      target: /app/backend/models
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: ./artifacts/bidmc
+      target: /app/backend/data/raw/bidmc
+      read_only: true
+      bind:
+        create_host_path: false
+  secrets:
+    - webpush_private
+  read_only: true
+  tmpfs:
+    - /tmp:mode=1777,size=128m
+  cap_drop: [ALL]
+  stop_grace_period: 30s
+
+services:
+  backend-staff:
+    <<: *backend
+    command: [python, /app/deploy/run_api.py, staff]
+    healthcheck:
+      test: [CMD, python, /app/deploy/healthcheck.py, staff]
+      start_period: 120s
+      interval: 30s
+      timeout: 8s
+      retries: 3
+
+  backend-patient:
+    <<: *backend
+    command: [python, /app/deploy/run_api.py, patient]
+    depends_on:
+      backend-staff:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, /app/deploy/healthcheck.py, patient]
+      start_period: 60s
+      interval: 30s
+      timeout: 8s
+      retries: 3
+
+  frontend-staff:
+    <<: *common
+    user: "node"
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.frontend
+      args:
+        WARD_PORTAL: staff
+        WARD_API_ORIGIN: http://backend-staff:8000
+    depends_on:
+      backend-staff:
+        condition: service_healthy
+    cap_drop: [ALL]
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/api/session/config').then(async r=>{if(!r.ok||(await r.json()).audience!=='staff')process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+
+  frontend-patient:
+    <<: *common
+    user: "node"
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.frontend
+      args:
+        WARD_PORTAL: patient
+        WARD_API_ORIGIN: http://backend-patient:8001
+    depends_on:
+      backend-patient:
+        condition: service_healthy
+    cap_drop: [ALL]
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/api/session/config').then(async r=>{if(!r.ok||(await r.json()).audience!=='patient')process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+
+  gateway:
+    <<: *common
+    image: caddy:2.10-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      WARD_STAFF_HOST: ${WARD_STAFF_HOST:?Run prepare_cloud_test.py first}
+      WARD_PATIENT_HOST: ${WARD_PATIENT_HOST:?Run prepare_cloud_test.py first}
+      ACME_EMAIL: ${ACME_EMAIL:?Set a certificate contact email}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      frontend-staff:
+        condition: service_healthy
+      frontend-patient:
+        condition: service_healthy
+
+  backup:
+    <<: *common
+    image: smart-ward-backend:local
+    command: [python, /app/deploy/backup.py, loop]
+    environment:
+      WARD_DB_PATH: ${WARD_DB_PATH:-/var/lib/smart-ward/ward-test.db}
+    volumes:
+      - ward-data:/source:ro
+      - ward-backups:/var/lib/smart-ward
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=32m
+    cap_drop: [ALL]
+    depends_on:
+      backend-staff:
+        condition: service_healthy
+
+volumes:
+  ward-data:
+  ward-backups:
+  caddy-data:
+  caddy-config:
+
+secrets:
+  webpush_private:
+    file: ./secrets/webpush-private.pem

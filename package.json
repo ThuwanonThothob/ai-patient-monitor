@@ -1,5 +1,25 @@
 {
-  "dependencies": {
-    "recharts": "^3.10.1"
+  "name": "ai-patient-monitor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Smart Ward AI Patient Monitor - Dual Staff & Patient Portals with Local ML Inference",
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "dev:staff": "npm --prefix frontend run dev:staff",
+    "dev:patient": "npm --prefix frontend run dev:patient",
+    "build": "npm --prefix frontend run build",
+    "build:patient": "npm --prefix frontend run build:patient",
+    "start": "npm --prefix frontend run start",
+    "start:staff": "npm --prefix frontend run start:staff",
+    "start:patient": "npm --prefix frontend run start:patient",
+    "lint": "npm --prefix frontend run lint",
+    "test": "npm --prefix frontend test",
+    "test:backend": "./.venv/bin/python -m unittest discover -s backend/tests -v",
+    "test:all": "./scripts/test_all.sh",
+    "preflight": "./.venv/bin/python scripts/deployment_preflight.py",
+    "ward:start": "./.venv/bin/python scripts/run_ward.py --start",
+    "ward:restart": "./.venv/bin/python scripts/run_ward.py --restart",
+    "ward:stop": "./.venv/bin/python scripts/run_ward.py --stop",
+    "ward:status": "./.venv/bin/python scripts/run_ward.py --status"
   }
 }

@@ -1,0 +1,26 @@
+{
+	email {$ACME_EMAIL}
+}
+
+(ward_headers) {
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+		X-Frame-Options DENY
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+	encode zstd gzip
+}
+
+{$WARD_STAFF_HOST} {
+	import ward_headers
+	reverse_proxy frontend-staff:3000
+}
+
+{$WARD_PATIENT_HOST} {
+	import ward_headers
+	reverse_proxy frontend-patient:3000
+}
+

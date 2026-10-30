@@ -1,31 +1,32 @@
-import numpy as np
-from sklearn.ensemble import RandomForestClassifier
+"""Compatibility wrappers around the offline-trained research model.
 
-print("🧠 กำลังเทรน AI: Risk Scoring (Random Forest)...")
+The former ten-row synthetic RandomForest has intentionally been removed.
+Historical ICU mortality artifacts are offline benchmarks only; live ward
+windows do not satisfy their 48-hour ICU contract and never receive a score.
+"""
 
-# 1. ข้อมูลจำลองสำหรับสอน AI: [Heart Rate, SpO2, Age]
-X_train = np.array([
-    [70, 98, 30], [75, 99, 45], [80, 97, 50], [60, 99, 25],  # กลุ่มปกติ
-    [120, 92, 60], [130, 88, 70], [45, 90, 65],              # กลุ่มความเสี่ยงสูง
-    [100, 95, 80], [110, 94, 75], [50, 94, 85]               # กลุ่มเฝ้าระวัง
-])
+from __future__ import annotations
 
-# 2. ป้ายกำกับ (Labels): 0 = ปกติ, 1 = เสี่ยง
-y_train = np.array([0, 0, 0, 0, 1, 1, 1, 1, 1, 1])
+from typing import Any, Iterable
 
-# 3. สร้างและเทรนโมเดล
-model = RandomForestClassifier(random_state=42)
-model.fit(X_train, y_train)
+from .trained_risk import assess_patient_risk, get_model_benchmarks, get_model_status
 
-def calculate_risk_score(hr: int, spo2: int, age: int = 50) -> int:
+
+def calculate_risk_assessment(profile: dict[str, Any], history: Iterable[dict[str, Any]]) -> dict[str, Any]:
+    return assess_patient_risk(profile, history)
+
+
+def calculate_risk_score(hr: int, spo2: int, age: int = 50) -> float | None:
+    """Legacy API for callers without patient history.
+
+    It returns ``None`` because live ward readings do not meet the ICU model's
+    training contract. New monitoring code uses ``monitor_model`` instead.
     """
-    รับค่าปัจจุบันมาคำนวณโอกาสที่จะเกิดภาวะวิกฤต (Risk Score 0-100%)
-    """
-    try:
-        # predict_proba คืนค่าเป็นความน่าจะเป็นของ [class 0, class 1]
-        probability = model.predict_proba([[hr, spo2, age]])
-        risk_percent = int(probability[0][1] * 100)
-        return risk_percent
-    except Exception as e:
-        print(f"❌ Risk Score Error: {e}")
-        return 0
+    assessment = assess_patient_risk(
+        {"age": age},
+        [{"heart_rate": hr, "spo2": spo2, "timestamp": 0}],
+    )
+    return assessment.get("risk_percent")
+
+
+__all__ = ["calculate_risk_assessment", "calculate_risk_score", "get_model_benchmarks", "get_model_status"]

@@ -1,0 +1,58 @@
+# Credentials and environment secrets
+.env
+.env.*
+!**/.env.example
+backend/.env
+backend/.staff-password
+**/.staff-password
+deploy/.env
+deploy/secrets/
+*.pem
+*.key
+
+# Database files and SQLite journals
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.sqlite*
+backend/*.db
+backend/*.db-wal
+backend/*.db-shm
+backend/runtime/
+backups/
+deploy/artifacts/
+deploy/backups/
+
+# Python generated files and virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.venv*/
+venv/
+env/
+
+# Node.js, Frontend builds & temporary caches
+node_modules/
+frontend/node_modules/
+frontend/.next/
+frontend/.next-*/
+frontend/frontend/
+*.tsbuildinfo
+.next/
+
+# Operating system metadata & local agent logs
+.DS_Store
+Thumbs.db
+.agents/
+
+# Reproducible ML inputs and generated model artifacts. Download/train locally;
+# do not commit raw clinical data or binaries.
+backend/data/raw/
+backend/data/processed/
+backend/models/*.joblib
+backend/models/*_metadata.json
+backend/models/sepsis2019/
+backend/models/posture/

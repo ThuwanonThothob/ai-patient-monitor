@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <title>Smart Ward — connected home care</title>
+  <rect width="512" height="512" rx="116" fill="#125B50"/>
+  <path d="M128 228 256 124l128 104v128c0 18-14 32-32 32H160c-18 0-32-14-32-32V228Z" stroke="#F4FAF6" stroke-width="24" stroke-linejoin="round"/>
+  <path d="M170 274h43l25-46 37 92 28-46h39" stroke="#8FE4C2" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="384" cy="228" r="29" fill="#8FE4C2" stroke="#125B50" stroke-width="12"/>
+</svg>

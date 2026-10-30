@@ -1,0 +1,30 @@
+FROM node:24-bookworm-slim AS build
+WORKDIR /app
+ENV NEXT_TELEMETRY_DISABLED=1
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ ./
+ARG WARD_PORTAL=staff
+ARG WARD_API_ORIGIN=http://backend-staff:8000
+ENV WARD_PORTAL=$WARD_PORTAL WARD_API_ORIGIN=$WARD_API_ORIGIN
+RUN if [ "$WARD_PORTAL" = "patient" ]; then npm run build:patient; else npm run build; fi \
+    && npm prune --omit=dev
+
+FROM node:24-bookworm-slim AS runtime
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
+WORKDIR /app
+ARG WARD_PORTAL=staff
+ENV WARD_PORTAL=$WARD_PORTAL
+COPY --from=build --chown=node:node /app/package.json /app/package-lock.json ./
+COPY --from=build --chown=node:node /app/node_modules ./node_modules
+COPY --from=build --chown=node:node /app/public ./public
+COPY --from=build --chown=node:node /app/.next-${WARD_PORTAL} ./.next-${WARD_PORTAL}
+COPY --from=build --chown=node:node /app/next.config.ts ./next.config.ts
+# A JS config avoids installing TypeScript on the runtime image. Rewrites and
+# headers are already materialized in the Next build routes manifest.
+RUN printf 'module.exports = { distDir: ".next-%s" };\n' "$WARD_PORTAL" > next.config.js \
+    && chown node:node next.config.js \
+    && rm next.config.ts
+USER node
+EXPOSE 3000
+CMD ["node", "node_modules/next/dist/bin/next", "start", "--hostname", "0.0.0.0", "--port", "3000"]

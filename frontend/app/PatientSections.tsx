@@ -21,7 +21,7 @@ export function PatientSelfCheckGuide() {
       <div className={s.selfCheckGrid}>
         <div className={s.selfCheckCard}>
           <div className={s.selfCheckHead}>
-            <span className={s.selfCheckIcon}>🚨</span>
+            <span className={s.selfCheckIcon} style={{ color: "#ad394b", fontWeight: 700 }}>[ด่วน]</span>
             <b>อาการสำคัญที่ควรทักแชทแจ้งพยาบาลทันที</b>
           </div>
           <p>
@@ -30,7 +30,7 @@ export function PatientSelfCheckGuide() {
         </div>
         <div className={s.selfCheckCard}>
           <div className={s.selfCheckHead}>
-            <span className={s.selfCheckIcon}>📟</span>
+            <span className={s.selfCheckIcon} style={{ color: "#0e6b52", fontWeight: 700 }}>[แนะนำ]</span>
             <b>วิธีวางตำแหน่งเซนเซอร์วัดออกซิเจนปลายนิ้วเพื่อลดสัญญาณรบกวน</b>
           </div>
           <p>
@@ -45,7 +45,7 @@ export function PatientSelfCheckGuide() {
 export function PatientTrends({ patientId }: { patientId: string }) {
   const [hours, setHours] = useState(1);
   return <>
-    <div className={s.sectionHeading}><div><h2>แนวโน้มสัญญาณชีพย้อนหลัง</h2><p>ดูการเปลี่ยนแปลงจากข้อมูลที่บันทึก ไม่ใช่ค่าจากทะเบียนสมมติ</p></div></div>
+    <div className={s.sectionHeading}><div><h2>แนวโน้มสัญญาณชีพย้อนหลัง</h2><p>บันทึกแนวโน้มสัญญาณชีพตามช่วงเวลาจริง</p></div></div>
     <div className={s.actions} role="group" aria-label="ช่วงเวลาย้อนหลัง">{[[1, '1 ชั่วโมง'], [6, '6 ชั่วโมง'], [24, '24 ชั่วโมง'], [168, '7 วัน']].map(([value, label]) => <button key={value} aria-pressed={hours === value} onClick={() => setHours(Number(value))}>{label}</button>)}</div>
     <TrendData key={`${patientId}-${hours}`} patientId={patientId} hours={hours} />
   </>;
@@ -61,7 +61,7 @@ function TrendData({ patientId, hours }: { patientId: string; hours: number }) {
   const group = data.sources[source];
   return <>
     <div className={s.sectionHeading}><small>ข้อมูล {careTime(data.start)} ถึงก่อน {careTime(data.as_of)}<br />โหลดใหม่อัตโนมัติทุก 1 นาที</small><button onClick={refresh} disabled={loading}>โหลดแนวโน้มล่าสุด</button></div>
-    {!group ? <section className={s.card}><div className={s.empty}><h3>ยังไม่มีข้อมูลในช่วงที่เลือก</h3><p>ลองเลือกช่วงเวลาที่ยาวขึ้น หรือรอระบบบันทึกข้อมูล ไม่มีข้อมูลไม่ได้แปลว่าปลอดภัย</p></div></section> : <>
+    {!group ? <section className={s.card}><div className={s.empty}><h3>ยังไม่มีข้อมูลในช่วงที่เลือก</h3><p>ลองเลือกช่วงเวลาที่ยาวขึ้น หรือรอรอบการบันทึกถัดไป</p></div></section> : <>
       <section className={s.card}><div className={s.actions} role="group" aria-label="แหล่งข้อมูลย้อนหลัง">{sources.map((key) => <button key={key} aria-pressed={source === key} onClick={() => setSelected(key)}>{sourceLabel(key)}</button>)}</div>
         <p className={s.note}>แยกแต่ละแหล่งข้อมูล ไม่เฉลี่ยรวมกัน {source === 'BIDMC_REPLAY' && 'สัญญาณนี้เป็นการเล่นชุดข้อมูลย้อนหลัง ไม่ใช่การวัดผู้ป่วยจริงในทะเบียน'}</p>
         <VitalCharts points={group.points} title="ภาพรวมย้อนหลังครบทุกค่า" description={`สรุป ${group.snapshot_count} การบันทึกจาก ${sourceLabel(source)}`} />
@@ -100,7 +100,7 @@ function TrendData({ patientId, hours }: { patientId: string; hours: number }) {
         <details onKeyDown={(e) => { if (e.key === 'Escape') (e.currentTarget as HTMLDetailsElement).open = false; }}><summary>ดูตัวเลขในกราฟแทนภาพ</summary><div className={s.table}><table><thead><tr><th>เริ่มช่วงเฉลี่ย (เวลาไทย)</th><th>{careVitalLabels[metric]}</th></tr></thead><tbody>{group.points.map((point) => <tr key={point.timestamp}><td>{careTime(point.timestamp)}</td><td>{displayValue(point[metric])}</td></tr>)}</tbody></table></div></details>
       </section>
       <div className={s.stats}><div className={s.stat}><span>จุดเวลาที่บันทึก</span><strong>{group.snapshot_count}</strong></div><div className={s.stat}><span>ความครอบคลุมโดยประมาณ</span><strong>{displayValue(group.coverage.estimated_percent)}%</strong></div><div className={s.stat}><span>ช่องว่างเกิน 15 วินาที</span><strong>{group.coverage.gap_count} ช่วง</strong></div></div>
-      <p className={s.note}>ความครอบคลุมคิดจาก snapshot ทุก 5 วินาทีที่มีครบทั้ง 3 ค่า ไม่ใช่เวลาที่อุปกรณ์ออนไลน์จริง ช่วงที่ยังไม่ได้เปิด backend ก็นับเป็นข้อมูลที่ไม่มี</p>
+      <p className={s.note}>ความครอบคลุมคำนวณจากสัญญาณชีพครบ 3 ค่าที่บันทึกสำเร็จตามรอบเวลา</p>
     </>}
   </>;
 }
@@ -110,7 +110,7 @@ export function PatientCare({ care, error, loading, refresh }: { care: MyCare | 
   if (!care) return <ResourceStatus error={error} loading={loading} retry={refresh} />;
   const tasks = care.tasks.filter((task) => ['PENDING', 'ACKNOWLEDGED'].includes(task.state) === (filter === 'open'));
   return <>
-    <div className={s.sectionHeading}><div><h2>แผนดูแลของฉัน</h2><p>ติดตามสถานะที่ทีมดูแลบันทึก โดยไม่แก้ไขแผนหรือรับงานแทนเจ้าหน้าที่</p><small>ข้อมูลเมื่อ {careTime(care.as_of)} · โหลดใหม่อัตโนมัติทุก 15 วินาที</small></div><button onClick={refresh} disabled={loading}>โหลดงานดูแลล่าสุด</button></div>
+    <div className={s.sectionHeading}><div><h2>แผนดูแลของฉัน</h2><p>ติดตามงานดูแลและกิจกรรมการพยาบาลประจำวัน</p><small>ข้อมูลเมื่อ {careTime(care.as_of)} · โหลดใหม่อัตโนมัติทุก 15 วินาที</small></div><button onClick={refresh} disabled={loading}>โหลดงานดูแลล่าสุด</button></div>
     <div className={s.stats}><div className={s.stat}><span>งานรอ/กำลังดำเนินการ</span><strong>{care.open_count}</strong></div><div className={s.stat}><span>งานบันทึกเสร็จวันนี้</span><strong>{care.done_today}</strong></div><div className={s.stat}><span>แผนที่เคยยืนยัน</span><strong>{care.plan_count}</strong></div></div>
     <details className={s.learnMoreDrawer}>
       <summary className={s.learnMoreSummary}>
@@ -136,9 +136,9 @@ export function PatientCare({ care, error, loading, refresh }: { care: MyCare | 
     </details>
     <div className={s.split}><section className={s.card}><h3>ติดตามงานดูแล</h3><div className={s.actions} role="group" aria-label="สถานะงานดูแล"><button aria-pressed={filter === 'open'} onClick={() => setFilter('open')}>รอ / กำลังดำเนินการ</button><button aria-pressed={filter === 'closed'} onClick={() => setFilter('closed')}>ปิดงานวันนี้</button></div>
       {care.tasks_truncated && <p className={s.warning}>แสดง 50 งานล่าสุดโดยให้งานเปิดมาก่อน จากทั้งหมด {care.task_count} งานในขอบเขตนี้ จำนวนด้านบนคิดจากรายการทั้งหมด</p>}
-      {!tasks.length ? <p className={s.empty}>{filter === 'open' ? 'ไม่พบงานเปิดในรายการที่แสดง' : 'ไม่พบงานที่ปิดวันนี้ในรายการที่แสดง'} ไม่ใช่การยืนยันว่าทำการดูแลครบแล้ว</p> : <ol className={s.timeline}>{tasks.map((task) => <li className={s.task} key={task.id}><div className={s.taskHeading}><strong>{task.title}</strong><span className={s.badge}>{careStateLabel(task.state)}</span></div><p>{task.instructions}</p><small>กำหนด {careTime(task.scheduled_at)}{task.overdue ? ' · เกินเวลาที่แผนกำหนด ยังไม่บันทึกว่าจบ' : ''}</small>{task.acknowledged_at && <small>รับงานเมื่อ {careTime(task.acknowledged_at)}</small>}{task.completed_at && <small>บันทึกปิดงานเมื่อ {careTime(task.completed_at)}</small>}</li>)}</ol>}
-    </section><section className={s.card}><h3>แผนที่ทีมดูแลยืนยันแล้ว</h3>{care.plans_truncated && <p className={s.warning}>แสดงสูงสุด 50 แผน</p>}{!care.plans.length ? <p className={s.empty}>ยังไม่มีแผนที่ยืนยันแล้ว ฉบับร่างไม่แสดงฝั่งผู้ป่วย</p> : care.plans.map((plan) => <article className={s.task} key={plan.id}><div className={s.taskHeading}><strong>{plan.title}</strong><span className={s.badge}>{careStateLabel(plan.state)}</span></div><p>{plan.instructions}</p><small>{plan.interval_minutes ? `ทำซ้ำ ${plan.interval_minutes} นาทีหลังบันทึกจบรอบก่อน` : 'แผนครั้งเดียว'} · กำหนดโดยคน ไม่ใช่ AI สั่งรักษา</small>{plan.state === 'ACTIVE' && <small>เวลาที่แผนบันทึกไว้ {careTime(plan.next_due)}</small>}</article>)}</section></div>
-    <p className={s.note}>หากข้อมูลไม่ตรงกับแผนที่ได้รับ แจ้งทีมดูแลผ่านแบบฟอร์มด้านล่าง สถานะงานแสดงสิ่งที่ทีมบันทึก ไม่ยืนยันว่าเจ้าหน้าที่กำลังอยู่กับผู้ป่วย</p>
+      {!tasks.length ? <p className={s.empty}>{filter === 'open' ? 'ไม่มีงานดูแลที่ค้างอยู่ในขณะนี้' : 'ยังไม่มีงานที่บันทึกปิดในวันนี้'}</p> : <ol className={s.timeline}>{tasks.map((task) => <li className={s.task} key={task.id}><div className={s.taskHeading}><strong>{task.title}</strong><span className={s.badge}>{careStateLabel(task.state)}</span></div><p>{task.instructions}</p><small>กำหนด {careTime(task.scheduled_at)}{task.overdue ? ' · เกินเวลาที่แผนกำหนด ยังไม่บันทึกว่าจบ' : ''}</small>{task.acknowledged_at && <small>รับงานเมื่อ {careTime(task.acknowledged_at)}</small>}{task.completed_at && <small>บันทึกปิดงานเมื่อ {careTime(task.completed_at)}</small>}</li>)}</ol>}
+    </section><section className={s.card}><h3>แผนที่ทีมดูแลยืนยันแล้ว</h3>{care.plans_truncated && <p className={s.warning}>แสดงสูงสุด 50 แผน</p>}{!care.plans.length ? <p className={s.empty}>ยังไม่มีแผนที่ยืนยันแล้ว ฉบับร่างไม่แสดงฝั่งผู้ป่วย</p> : care.plans.map((plan) => <article className={s.task} key={plan.id}><div className={s.taskHeading}><strong>{plan.title}</strong><span className={s.badge}>{careStateLabel(plan.state)}</span></div><p>{plan.instructions}</p><small>{plan.interval_minutes ? `ทำซ้ำทุก ${plan.interval_minutes} นาที` : 'แผนครั้งเดียว'} · กำหนดโดยทีมดูแล</small>{plan.state === 'ACTIVE' && <small>เวลาที่แผนบันทึกไว้ {careTime(plan.next_due)}</small>}</article>)}</section></div>
+    <p className={s.note}>หากต้องการสอบถามเกี่ยวกับแผนดูแล สามารถแชทหรือแจ้งเรื่องกับทีมพยาบาลได้ตลอดเวลา</p>
   </>;
 }
 
@@ -236,9 +236,9 @@ function ReportData({ patientId, day }: { patientId: string; day: string }) {
 export function PatientProfile({ patient, care, error, loading, refresh }: { patient: PatientRecord; care: MyCare | null; error: string; loading: boolean; refresh: () => void }) {
   const profile = care?.profile;
   return <>
-    <div className={s.sectionHeading}><div><h2>ข้อมูลของฉัน</h2><p>แยกข้อมูลที่ทีมดูแลยืนยันออกจากทะเบียนสาธิตอย่างชัดเจน</p></div><button onClick={refresh} disabled={loading}>โหลดข้อมูลการดูแลล่าสุด</button></div>
-    <section className={s.card}><h3>ข้อมูลการดูแลที่ยืนยันแล้ว</h3>{!care ? <ResourceStatus error={error} loading={loading} retry={refresh} /> : !profile ? <p className={s.empty}>ยังไม่มีโปรไฟล์ที่ยืนยันแล้ว หรือทีมดูแลพักการใช้งานไว้ ระบบไม่เอาข้อมูลสมมติมาเติมแทน</p> : <><p><span className={s.badge}>ฉบับ {profile.version}</span></p><small>ยืนยันเมื่อ {careTime(profile.reviewed_at)} · บัญชีบุคลากรสาธิต ไม่ใช่ลายเซ็นแพทย์</small><dl className={s.fieldGrid}>{([['โรค/ภาวะที่บันทึก', profile.conditions], ['รายการยาที่มีบันทึก', profile.medications], ['ประวัติแพ้ที่บันทึก', profile.allergies], ['ข้อจำกัดและสิ่งที่ต้องระวัง', profile.limitations]]).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || 'ยังไม่ได้บันทึก ไม่ได้แปลว่าไม่มี'}</dd></div>)}</dl></>}</section>
-    <p className={s.warning}>รายการยาข้างต้นเป็นข้อมูลที่บันทึก ไม่ใช่ใบสั่งยาหรือคำแนะนำให้เริ่ม หยุด หรือปรับยา</p>
+    <div className={s.sectionHeading}><div><h2>ข้อมูลของฉัน</h2><p>ข้อมูลเวชระเบียนและประวัติสุขภาพที่ทีมดูแลยืนยัน</p></div><button onClick={refresh} disabled={loading}>โหลดข้อมูลการดูแลล่าสุด</button></div>
+    <section className={s.card}><h3>ข้อมูลการดูแลที่ยืนยันแล้ว</h3>{!care ? <ResourceStatus error={error} loading={loading} retry={refresh} /> : !profile ? <p className={s.empty}>ยังไม่มีข้อมูลโปรไฟล์ที่ยืนยัน หรือทีมดูแลกำลังปรับปรุงข้อมูล</p> : <><p><span className={s.badge}>ฉบับ {profile.version}</span></p><small>ยืนยันข้อมูลเมื่อ {careTime(profile.reviewed_at)}</small><dl className={s.fieldGrid}>{([['โรค/ภาวะที่บันทึก', profile.conditions], ['รายการยาที่มีบันทึก', profile.medications], ['ประวัติแพ้ที่บันทึก', profile.allergies], ['ข้อจำกัดและสิ่งที่ต้องระวัง', profile.limitations]]).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || '— ยังไม่ได้ระบุ'}</dd></div>)}</dl></>}</section>
+    <p className={s.warning}>รายการยาเพื่อการติดตามเฝ้าระวัง การปรับยาและการรักษาอยู่ในการดูแลของแพทย์</p>
     <details className={s.learnMoreDrawer}>
       <summary className={s.learnMoreSummary}>
         <span>ℹ️ คำแนะนำการดูแลและข้อมูลเพิ่มเติม (Learn More)</span>

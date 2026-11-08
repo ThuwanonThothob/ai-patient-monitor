@@ -1,15 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 
-const staffDashboardPath = resolve('app/StaffDashboard.tsx');
-const careChatPath = resolve('app/CareChat.tsx');
-const careChatCssPath = resolve('app/CareChat.module.css');
-const patientPortalPath = resolve('app/PatientPortal.tsx');
-const operationsPanelPath = resolve('app/OperationsPanel.tsx');
-const chatNotifyPath = resolve('app/chatNotify.ts');
+const staffDashboardPath = fileURLToPath(new URL('../app/StaffDashboard.tsx', import.meta.url));
+const careChatPath = fileURLToPath(new URL('../app/CareChat.tsx', import.meta.url));
+const careChatCssPath = fileURLToPath(new URL('../app/CareChat.module.css', import.meta.url));
+const patientPortalPath = fileURLToPath(new URL('../app/PatientPortal.tsx', import.meta.url));
+const operationsPanelPath = fileURLToPath(new URL('../app/OperationsPanel.tsx', import.meta.url));
+const chatNotifyPath = fileURLToPath(new URL('../app/chatNotify.ts', import.meta.url));
 
 const staffDashboardSrc = readFileSync(staffDashboardPath, 'utf8');
 const careChatSrc = readFileSync(careChatPath, 'utf8');
@@ -76,7 +76,7 @@ test('M3-ADVERSARIAL-4: PatientPortal.tsx chat vs care separation', () => {
 
   // Distinct action buttons in hero
   assert.match(patientPortalSrc, /onClick=\{\(\)\s*=>\s*setActive\('chat'\)\}>[\s\S]*?แชทข้อความกับแพทย์และทีมดูแล\s*\(Messenger\)/, 'PatientPortal must provide Messenger chat button');
-  assert.match(patientPortalSrc, /onClick=\{\(\)\s*=>\s*setActive\('care'\)\}>แจ้งเรื่อง\s*\/\s*ติดตามงานดูแล/, 'PatientPortal must provide separate care requests button');
+  assert.match(patientPortalSrc, /onClick=\{\(\)\s*=>\s*setActive\('care'\)\}>[\s\S]*?แจ้งเรื่อง\s*\/\s*ติดตามงานดูแล/, 'PatientPortal must provide separate care requests button');
 });
 
 test('M3-ADVERSARIAL-5: CareChat multi-contact sidebar & conversation filtering (Facebook Messenger layout)', () => {
@@ -203,8 +203,8 @@ test('M3-ADVERSARIAL-9: Rounded Pill Composer & Quick Replies', () => {
 
   // Circular Send Button
   assert.match(careChatSrc, /<button\s+type="submit"\s+className=\{s\.sendBtn\}\s+aria-label="ส่งข้อความ"/, 'Send button must be submit type with aria-label');
-  assert.match(careChatCssSrc, /\.sendBtn\s*\{[^}]*width:\s*34px;\s*height:\s*34px;\s*border-radius:\s*50%/, 'sendBtn must be 34px circle');
-  assert.match(careChatCssSrc, /\.sendBtn\s*\{[^}]*background:\s*#0084ff/, 'sendBtn must have #0084ff blue background');
+  assert.match(careChatCssSrc, /\.sendBtn[^{]*\{[^}]*width:\s*34px;[^}]*height:\s*34px;[^}]*border-radius:\s*50%/, 'sendBtn must be 34px circle');
+  assert.match(careChatCssSrc, /\.sendBtn[^{]*\{[^}]*background:\s*#0084ff/, 'sendBtn must have #0084ff blue background');
 
   // Keyboard shortcut: Enter to send, Shift+Enter for newline
   assert.match(careChatSrc, /if\s*\(event\.key\s*===\s*'Enter'\s*&&\s*!event\.shiftKey\)/, 'Enter key without Shift must trigger send');
@@ -240,7 +240,7 @@ test('M3-ADVERSARIAL-10: Strict exclusion of Voice/Video Call Controls, Dialers,
   assert.match(careChatSrc, /ติดต่อ\s*1669/, 'CareChat.tsx must say "ติดต่อ 1669"');
 
   // Verify that NotificationPanel does not trigger audio calls
-  const notificationPanelSrc = readFileSync(resolve('app/NotificationPanel.tsx'), 'utf8');
+  const notificationPanelSrc = readFileSync(fileURLToPath(new URL('../app/NotificationPanel.tsx', import.meta.url)), 'utf8');
   assert.doesNotMatch(notificationPanelSrc, /สายเรียกเข้า|เสียงเรียกเข้า|incoming_call/i, 'NotificationPanel must not contain call rings');
 });
 

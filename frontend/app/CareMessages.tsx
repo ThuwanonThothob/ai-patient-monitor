@@ -33,7 +33,13 @@ const quickPresets = [
   { topic: 'care', label: 'สอบถามแผนดูแลวันนี้', text: 'ต้องการสอบถามตารางเวลาและแผนการดูแลของวันนี้เพิ่มเติมครับ/ค่ะ' },
 ];
 
-export default function CareMessages({ staff = false }: { staff?: boolean }) {
+const staffQuickReplies = [
+  'ทีมพยาบาลรับเรื่องแล้ว กำลังเข้าไปตรวจสอบที่เตียงตามรอบครับ/ค่ะ',
+  'ตรวจสอบอุปกรณ์และปรับท่าทางบนเตียงให้เรียบร้อยแล้วครับ/ค่ะ',
+  'แจ้งแพทย์เจ้าของไข้รับทราบและบันทึกในแผนการดูแลวันนี้แล้วครับ/ค่ะ',
+];
+
+export default function CareMessages({ staff = false, patientId }: { staff?: boolean; patientId?: string }) {
   const endpoint = staff ? '/api/care-messages' : '/api/me/messages';
   const { data, error, refresh } = usePatientResource<{ messages: Message[] }>(endpoint, 15000);
   const [topic, setTopic] = useState('care');
@@ -43,19 +49,29 @@ export default function CareMessages({ staff = false }: { staff?: boolean }) {
   const [notice, setNotice] = useState('');
   const requestKey = useRef<string | null>(null);
 
-  async function submit(id?: number, state?: string) {
+  async function submit(id?: number, state?: string, andResolve = false) {
     if (busy) return;
     setBusy(true);
     setNotice('');
     try {
       if (!staff && !requestKey.current) requestKey.current = crypto.randomUUID();
+      const replyText = id ? (replies[id] ?? '') : '';
       const response = await fetch(id ? `${endpoint}/${id}` : endpoint, {
         method: id ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(id ? { state, reply: replies[id] ?? '' } : { topic, message, request_key: requestKey.current }),
+        body: JSON.stringify(id ? { state, reply: replyText } : { topic, message, request_key: requestKey.current }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'บันทึกไม่สำเร็จ');
+      if (id && andResolve && state === 'ACKNOWLEDGED') {
+        const res2 = await fetch(`${endpoint}/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ state: 'RESOLVED', reply: replyText }),
+        });
+        const json2 = await res2.json();
+        if (!res2.ok) throw new Error(typeof json2.detail === 'string' ? json2.detail : 'ส่งคำตอบปิดรายการไม่สำเร็จ');
+      }
       if (!staff) {
         setMessage('');
         requestKey.current = null;
@@ -69,18 +85,28 @@ export default function CareMessages({ staff = false }: { staff?: boolean }) {
     }
   }
 
-  const openCount = data?.messages.filter(m => m.state !== 'RESOLVED').length ?? 0;
+  const allMessages = data?.messages ?? [];
+  const visibleMessages = patientId
+    ? allMessages.filter(m => !m.patient_id || m.patient_id.toUpperCase() === patientId.toUpperCase())
+    : allMessages;
+  const openCount = visibleMessages.filter(m => m.state !== 'RESOLVED').length;
 
   return (
     <section className={s.panel}>
       <div className={s.titleRow} style={{ marginBottom: 10 }}>
         <div>
           <div className={s.eyebrow}>ASYNCHRONOUS CARE REQUESTS · TRIAGE QUEUE</div>
-          <h2 className={s.h2}>{staff ? 'ข้อความจากผู้ป่วยและผู้ดูแล' : 'แจ้งเรื่องให้ทีมดูแล'}</h2>
+          <h2 className={s.h2}>
+            {staff
+              ? patientId
+                ? `คำขอและข้อความแจ้งเรื่องจากผู้ป่วย (${patientId})`
+                : 'ข้อความจากผู้ป่วยและผู้ดูแล'
+              : 'แจ้งเรื่องให้ทีมดูแล'}
+          </h2>
         </div>
         {data && (
           <span className={`${s.pill} ${openCount > 0 ? s.warning : s.resolve}`}>
-            รอดำเนินการ {openCount} · ทั้งหมด {data.messages.length}
+            รอดำเนินการ {openCount} · ทั้งหมด {visibleMessages.length}
           </span>
         )}
       </div>
@@ -157,6 +183,7 @@ export default function CareMessages({ staff = false }: { staff?: boolean }) {
               required
               rows={3}
               disabled={busy}
+              placeholder="ระบุรายละเอียดที่ต้องการแจ้งทีมดูแล (อย่างน้อย 5 ตัวอักษร หรือเลือกปุ่มข้อความด่วนด้านบน)..."
             />
           </label>
           <div className={s.actions} style={{ marginBottom: 0 }}>
@@ -170,10 +197,11 @@ export default function CareMessages({ staff = false }: { staff?: boolean }) {
       {notice && <p className={s.notice} role="status">{notice}</p>}
       {error && <p role="alert" className={s.error}>{error}</p>}
       {!data && !error && <p role="status">กำลังโหลดข้อความ…</p>}
-      {data?.messages.length === 0 && <p className={s.muted}>ยังไม่มีข้อความที่ต้องติดตาม</p>}
+      {data && visibleMessages.length === 0 && <p className={s.muted}>ยังไม่มีข้อความที่ต้องติดตาม</p>}
 
-      {data?.messages.map(m => {
+      {visibleMessages.map(m => {
         const stateClass = m.state === 'RESOLVED' ? s.resolve : m.state === 'NEW' ? s.critical : s.warning;
+        const replyLen = replies[m.id]?.trim().length ?? 0;
         return (
           <article className={s.messageRow} key={m.id}>
             <div className={s.cardHead} style={{ marginBottom: 6 }}>
@@ -194,6 +222,24 @@ export default function CareMessages({ staff = false }: { staff?: boolean }) {
             )}
             {staff && m.state !== 'RESOLVED' && (
               <div style={{ marginTop: 10 }}>
+                <div style={{ marginBottom: 6 }}>
+                  <small className={s.muted} style={{ display: 'block', marginBottom: 4, fontWeight: 600 }}>
+                    คำตอบด่วนสำหรับทีมดูแล (คลิกเพื่อเติมข้อความ):
+                  </small>
+                  <div className={s.actions} style={{ margin: 0, gap: 6 }}>
+                    {staffQuickReplies.map(preset => (
+                      <button
+                        key={preset}
+                        type="button"
+                        className={s.quickButton}
+                        disabled={busy}
+                        onClick={() => setReplies(v => ({ ...v, [m.id]: preset }))}
+                      >
+                        + {preset}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <label>
                   คำตอบที่ผู้ป่วยจะเห็น
                   <textarea
@@ -202,17 +248,27 @@ export default function CareMessages({ staff = false }: { staff?: boolean }) {
                     onChange={e => setReplies(v => ({ ...v, [m.id]: e.target.value }))}
                     maxLength={1000}
                     rows={2}
+                    placeholder="พิมพ์คำตอบถึงผู้ป่วย (อย่างน้อย 5 ตัวอักษรเพื่อส่งคำตอบและปิดรายการ)..."
                   />
                 </label>
                 <div className={s.actions} style={{ marginBottom: 0 }}>
                   {m.state === 'NEW' ? (
-                    <button className={s.primary} disabled={busy} onClick={() => void submit(m.id, 'ACKNOWLEDGED')}>
-                      รับเรื่อง
-                    </button>
+                    <>
+                      <button className={s.primary} disabled={busy} onClick={() => void submit(m.id, 'ACKNOWLEDGED')}>
+                        รับเรื่อง
+                      </button>
+                      <button
+                        className={s.resolve}
+                        disabled={busy || replyLen < 5}
+                        onClick={() => void submit(m.id, 'ACKNOWLEDGED', true)}
+                      >
+                        รับเรื่องและส่งคำตอบปิดรายการ
+                      </button>
+                    </>
                   ) : (
                     <button
                       className={s.resolve}
-                      disabled={busy || (replies[m.id]?.trim().length ?? 0) < 5}
+                      disabled={busy || replyLen < 5}
                       onClick={() => void submit(m.id, 'RESOLVED')}
                     >
                       ส่งคำตอบและปิดรายการ

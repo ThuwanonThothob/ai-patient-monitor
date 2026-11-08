@@ -203,7 +203,7 @@ function DailyReport({ patientId, day }: { patientId: string; day: string }) {
             {data ? (
               <p style={{ margin: 0 }}>
                 <b>
-                  {matchingReview ? "🟢 ยืนยันแล้ว (ตรงกับร่างที่แสดง)" : "📝 ฉบับร่างรอตรวจทาน"}
+                  {matchingReview ? "ยืนยันแล้ว (ตรงกับร่างที่แสดง)" : "ฉบับร่างรอตรวจทาน"}
                 </b>{" "}
                 · ข้อมูลถึงก่อน {careTime(data.as_of)} · {data.partial_day ? "ยังไม่ครบวัน" : "สิ้นสุดวันแล้ว"}
                 <small className={s.muted}>
@@ -290,6 +290,30 @@ function DailyReport({ patientId, day }: { patientId: string; day: string }) {
                   marginBottom: 12,
                 }}
               >
+                <div style={{ marginBottom: 8 }}>
+                  <small className={s.muted} style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>
+                    เลือกบันทึกผู้ตรวจทานด่วน (คลิกเพื่อเติมข้อความ):
+                  </small>
+                  <div className={s.actions} style={{ margin: 0, gap: 6 }}>
+                    {[
+                      "ตรวจทานสถิติ สัญญาณชีพ และงานค้างครบถ้วนแล้ว พร้อมส่งต่อเวร",
+                      "รับทราบแนวโน้มสัญญาณชีพและแผนดูแลประจำวัน ติดตามตามรอบปกติ",
+                    ].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          setNote(preset);
+                          setConfirmed(true);
+                        }}
+                        style={{ fontSize: 12, padding: "4px 10px", minHeight: 32 }}
+                      >
+                        + {preset}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <label className={s.check} style={{ marginTop: 0 }}>
                   <input
                     type="checkbox"
@@ -305,7 +329,7 @@ function DailyReport({ patientId, day }: { patientId: string; day: string }) {
                     onChange={(e) => setNote(e.target.value)}
                     maxLength={1000}
                     rows={3}
-                    placeholder="ระบุผลการทบทวนและข้อสังเกตสำหรับส่งต่อเวร (อย่างน้อย 3 ตัวอักษร)"
+                    placeholder="ระบุผลการทบทวนและข้อสังเกตสำหรับส่งต่อเวร (อย่างน้อย 3 ตัวอักษร หรือคลิกปุ่มด่วนด้านบน)"
                   />
                 </label>
                 <button
@@ -319,7 +343,7 @@ function DailyReport({ patientId, day }: { patientId: string; day: string }) {
 
               <details className={s.learnMoreDrawer}>
                 <summary className={s.learnMoreSummary}>
-                  <span>🗂️ ประวัติฉบับที่ตรวจทานแล้วและข้อจำกัดรายงาน ({data.reviews.length} ฉบับ · Learn More)</span>
+                  <span>ประวัติฉบับที่ตรวจทานแล้วและข้อจำกัดรายงาน ({data.reviews.length} ฉบับ · Learn More)</span>
                   <span className={s.learnMoreBadge}>ดูประวัติ</span>
                 </summary>
                 <div className={s.learnMoreBody}>
@@ -467,7 +491,7 @@ function DailyReport({ patientId, day }: { patientId: string; day: string }) {
 
             <details className={s.learnMoreDrawer}>
               <summary className={s.learnMoreSummary}>
-                <span>📊 ข้อมูลขาดช่วงและประวัติการประเมินจากโมเดล ML (Learn More)</span>
+                <span>ข้อมูลขาดช่วงและประวัติการประเมินจากโมเดล ML (Learn More)</span>
                 <span className={s.learnMoreBadge}>ดูหลักฐานเทคนิค</span>
               </summary>
               <div className={s.learnMoreBody}>

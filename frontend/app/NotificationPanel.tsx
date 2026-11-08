@@ -312,7 +312,7 @@ export default function NotificationPanel({ patient = false }: { patient?: boole
 
         <details className={s.learnMoreDrawer}>
           <summary className={s.learnMoreSummary}>
-            <span>🛡️ ความเป็นส่วนตัว การตั้งค่าเซิร์ฟเวอร์ และประวัติการส่ง (Learn More)</span>
+            <span>ความเป็นส่วนตัว การตั้งค่าเซิร์ฟเวอร์ และประวัติการส่ง (Learn More)</span>
             <span className={s.learnMoreBadge}>ดูประวัติ ({state?.events.length ?? 0})</span>
           </summary>
           <div className={s.learnMoreBody}>
@@ -398,7 +398,7 @@ function Header({ subscribed }: { subscribed: boolean }) {
         <h2 className={s.h2}>เชื่อมต่อโทรศัพท์ของคุณ</h2>
       </div>
       <span className={`${s.pill} ${subscribed ? s.resolve : s.warning}`}>
-        {subscribed ? "🟢 ผูกอุปกรณ์แล้ว" : "⚪ ยังไม่ได้ผูกอุปกรณ์"}
+        {subscribed ? "ผูกอุปกรณ์แล้ว" : "ยังไม่ได้ผูกอุปกรณ์"}
       </span>
     </div>
   );

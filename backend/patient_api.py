@@ -6,6 +6,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from datetime import date
 from typing import Literal
+import sqlite3
 import time
 from collections import defaultdict
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -22,6 +23,8 @@ from monitor_service import patient_state
 from patient_registry import PATIENT_LOGIN_PROFILES
 
 
+import os
+
 # In-memory sliding window rate limits: { key: [timestamp, ...] }
 _rate_limits: dict[str, list[float]] = defaultdict(list)
 
@@ -33,10 +36,13 @@ def reset_rate_limits():
 
 def check_rate_limit(key: str, limit: int, window: float = 60.0) -> tuple[bool, int]:
     now = time.time()
-    timestamps = _rate_limits[key]
     cutoff = now - window
-    _rate_limits[key] = [ts for ts in timestamps if ts > cutoff]
-    timestamps = _rate_limits[key]
+    if len(_rate_limits) > 500:
+        stale_keys = [k for k, ts in _rate_limits.items() if not ts or ts[-1] <= cutoff]
+        for k in stale_keys:
+            _rate_limits.pop(k, None)
+    timestamps = [ts for ts in _rate_limits[key] if ts > cutoff]
+    _rate_limits[key] = timestamps
     if len(timestamps) >= limit:
         oldest = timestamps[0]
         retry_after = max(1, int(window - (now - oldest)))
@@ -47,7 +53,13 @@ def check_rate_limit(key: str, limit: int, window: float = 60.0) -> tuple[bool, 
 
 @asynccontextmanager
 async def lifespan(app):
-    init_db()
+    try:
+        init_db()
+    except sqlite3.OperationalError as e:
+        if 'locked' in str(e).lower() or 'busy' in str(e).lower():
+            pass
+        else:
+            raise
     yield
 
 
@@ -59,7 +71,8 @@ async def rate_limit_middleware(request: Request, call_next):
     if request.method == 'OPTIONS':
         return await call_next(request)
 
-    forwarded = request.headers.get('x-forwarded-for')
+    trust_proxy = os.getenv("WARD_TRUST_PROXY_HEADERS", "").strip().lower() in ("1", "true", "yes")
+    forwarded = request.headers.get('x-forwarded-for') if trust_proxy else None
     client_ip = forwarded.split(',')[0].strip() if forwarded else (request.client.host if request.client else 'local')
 
     is_login = request.url.path == '/api/session/login' and request.method == 'POST'
@@ -101,6 +114,7 @@ def own_monitor(patient_id):
 @app.get('/api/me')
 def me(request: Request):
     patient_id = request.state.subject
+    auth._log_security_audit(patient_id, 'PATIENT_SELF_DATA_VIEWED', patient_id, f'Patient {patient_id} viewed own portal data')
     monitor = own_monitor(patient_id)
     # Explicit patient view: no cross-patient query and no staff audit/actions.
     return {'patient_id': patient_id, 'profile': patient_views.public_registry(patient_id),

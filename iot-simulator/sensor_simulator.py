@@ -27,10 +27,51 @@ from backend.patient_registry import PATIENT_PROFILES as REGISTERED_PATIENTS
 
 
 import os
+import ssl
 
 BROKER = os.getenv("MQTT_BROKER", "localhost")
 PORT = int(os.getenv("MQTT_PORT", "8083"))
 TOPIC = os.getenv("MQTT_TOPIC", "my_ai_hospital/vitals")
+MQTT_TRANSPORT = os.getenv("MQTT_TRANSPORT", "websockets")
+MQTT_USERNAME = (os.getenv("MQTT_USERNAME") or "").strip()
+MQTT_PASSWORD = os.getenv("MQTT_PASSWORD") or ""
+MQTT_CA_CERT = (os.getenv("MQTT_CA_CERT") or "").strip()
+
+
+def _default_tls_enabled(port: int = PORT) -> bool:
+    raw = (os.getenv("MQTT_TLS_ENABLED") or "").strip().lower()
+    if raw in {"true", "1", "yes"}:
+        return True
+    if raw in {"false", "0", "no"}:
+        return False
+    return port in {8883, 8084}
+
+
+def configure_simulator_mqtt_security(
+    client: mqtt.Client,
+    *,
+    port: int = PORT,
+    username: str | None = None,
+    password: str | None = None,
+    tls_enabled: bool | None = None,
+    ca_cert: str | None = None,
+) -> bool:
+    resolved_user = (username if username is not None else MQTT_USERNAME).strip()
+    resolved_pass = password if password is not None else MQTT_PASSWORD
+    resolved_ca = (ca_cert if ca_cert is not None else MQTT_CA_CERT).strip()
+    resolved_tls = tls_enabled if tls_enabled is not None else _default_tls_enabled(port)
+    tls_insecure = (os.getenv("MQTT_TLS_INSECURE") or "").strip().lower() in {"true", "1", "yes"}
+
+    if resolved_user:
+        client.username_pw_set(resolved_user, resolved_pass or None)
+    if resolved_tls:
+        client.tls_set(
+            ca_certs=resolved_ca if resolved_ca else None,
+            tls_version=ssl.PROTOCOL_TLS_CLIENT,
+        )
+        if tls_insecure:
+            client.tls_insecure_set(True)
+    return resolved_tls
 
 
 @dataclass(frozen=True)
@@ -169,9 +210,30 @@ def build_states(seed: int | None = None) -> list[PatientState]:
     return [PatientState(profile, random.Random(seed_source.randrange(1_000_000))) for profile in PATIENT_PROFILES]
 
 
-def run(interval: float, jitter: float, seed: int | None, broker: str = BROKER, port: int = PORT, topic: str = TOPIC) -> None:
+def run(
+    interval: float,
+    jitter: float,
+    seed: int | None,
+    broker: str = BROKER,
+    port: int = PORT,
+    topic: str = TOPIC,
+    mqtt_username: str | None = None,
+    mqtt_password: str | None = None,
+    tls: bool | None = None,
+    ca_cert: str | None = None,
+    inject_artifact_bed: str | None = None,
+    inject_artifact_type: str = "probe_disconnect",
+) -> None:
     states = build_states(seed)
-    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, transport="websockets")
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, transport=MQTT_TRANSPORT)
+    configure_simulator_mqtt_security(
+        client,
+        port=port,
+        username=mqtt_username,
+        password=mqtt_password,
+        tls_enabled=tls,
+        ca_cert=ca_cert,
+    )
     print(f"⏳ Connecting to MQTT broker {broker}:{port}...")
     client.connect(broker, port, 60)
     client.loop_start()
@@ -192,6 +254,21 @@ def run(interval: float, jitter: float, seed: int | None, broker: str = BROKER, 
 
             state = state_by_id[due_patient_id]
             heart_rate, spo2, respiratory_rate, blood_glucose, ecg_rhythm, simulation_state = state.sample(time.monotonic() - start)
+            if inject_artifact_bed and due_patient_id == inject_artifact_bed.upper():
+                if inject_artifact_type == "impossible_spo2":
+                    spo2 = 105
+                    simulation_state = "INJECTED_ARTIFACT: SpO2 105% (Sensor out of bounds)"
+                elif inject_artifact_type == "impossible_hr":
+                    heart_rate = 255
+                    simulation_state = "INJECTED_ARTIFACT: HR 255 bpm (Signal fault)"
+                elif inject_artifact_type == "apnea_fault":
+                    respiratory_rate = 0
+                    simulation_state = "INJECTED_ARTIFACT: RR 0 /min (Sensor disconnect)"
+                else:  # probe_disconnect
+                    heart_rate = 22
+                    spo2 = 0
+                    respiratory_rate = 0
+                    simulation_state = "INJECTED_ARTIFACT: Disconnected probe"
             payload = {
                 "patient_id": due_patient_id,
                 "heart_rate": heart_rate,
@@ -227,9 +304,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--broker", default=BROKER, help=f"MQTT broker host (default: {BROKER}).")
     parser.add_argument("--port", type=int, default=PORT, help=f"MQTT WebSocket port (default: {PORT}).")
     parser.add_argument("--topic", default=TOPIC, help=f"MQTT topic (default: {TOPIC}).")
+    parser.add_argument("--mqtt-username", default=MQTT_USERNAME, help="Optional MQTT broker username.")
+    parser.add_argument("--mqtt-password", default=MQTT_PASSWORD, help="Optional MQTT broker password.")
+    parser.add_argument("--tls", action="store_true", default=None, help="Enable TLS for MQTT broker connection.")
+    parser.add_argument("--ca-cert", default=MQTT_CA_CERT, help="Optional path to CA certificate bundle for TLS.")
     parser.add_argument("--interval", type=float, default=30.0, help="Average seconds between readings for each patient (default: 30).")
     parser.add_argument("--jitter", type=float, default=6.0, help="Random scheduling variation per reading in seconds (default: 6).")
     parser.add_argument("--seed", type=int, help="Optional deterministic random seed for demos.")
+    parser.add_argument("--inject-artifact-bed", default=None, help="Optional patient ID to inject sensor artifacts into (e.g. A001).")
+    parser.add_argument("--inject-artifact-type", choices=["probe_disconnect", "impossible_spo2", "impossible_hr", "apnea_fault"], default="probe_disconnect", help="Type of artifact to inject.")
     return parser.parse_args()
 
 
@@ -237,4 +320,17 @@ if __name__ == "__main__":
     args = parse_args()
     if args.interval <= 0 or args.jitter < 0:
         raise SystemExit("--interval must be positive and --jitter cannot be negative")
-    run(args.interval, args.jitter, args.seed, broker=args.broker, port=args.port, topic=args.topic)
+    run(
+        args.interval,
+        args.jitter,
+        args.seed,
+        broker=args.broker,
+        port=args.port,
+        topic=args.topic,
+        mqtt_username=args.mqtt_username,
+        mqtt_password=args.mqtt_password,
+        tls=args.tls,
+        ca_cert=args.ca_cert,
+        inject_artifact_bed=args.inject_artifact_bed,
+        inject_artifact_type=args.inject_artifact_type,
+    )

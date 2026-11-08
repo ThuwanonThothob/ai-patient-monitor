@@ -1,15 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const staffDashboardPath = resolve('app/StaffDashboard.tsx');
-const agentAssistantPath = resolve('app/AgentAssistant.tsx');
-const agentCssPath = resolve('app/AgentAssistant.module.css');
-const wardCssPath = resolve('app/Ward.module.css');
-const vitalChartsPath = resolve('app/VitalCharts.tsx');
-const patientPortalPath = resolve('app/PatientPortal.tsx');
-const monitorPanelPath = resolve('app/MonitorPanel.tsx');
+const staffDashboardPath = fileURLToPath(new URL('../app/StaffDashboard.tsx', import.meta.url));
+const agentAssistantPath = fileURLToPath(new URL('../app/AgentAssistant.tsx', import.meta.url));
+const agentCssPath = fileURLToPath(new URL('../app/AgentAssistant.module.css', import.meta.url));
+const wardCssPath = fileURLToPath(new URL('../app/Ward.module.css', import.meta.url));
+const vitalChartsPath = fileURLToPath(new URL('../app/VitalCharts.tsx', import.meta.url));
+const patientPortalPath = fileURLToPath(new URL('../app/PatientPortal.tsx', import.meta.url));
+const monitorPanelPath = fileURLToPath(new URL('../app/MonitorPanel.tsx', import.meta.url));
 
 const staffDashboardSrc = readFileSync(staffDashboardPath, 'utf8');
 const agentAssistantSrc = readFileSync(agentAssistantPath, 'utf8');

@@ -34,8 +34,10 @@
 .warning, .error, .note { padding: 13px 16px; border: 1px solid #e6d6b9; border-radius: 12px; background: #fff9eb; color: #73521c; margin: 14px 0; font-size: 13.5px; }
 .error { background: #fff2ee; border-color: #e7c9bd; color: #853f29; }
 .note { background: #f3f8fa; color: #3d5a69; border-color: #d7e4ea; font-size: 13px; }
-.nav { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; padding: 6px; border: 1px solid var(--line); background: white; border-radius: 14px; margin: 16px 0 24px; box-shadow: 0 1px 2px rgba(15, 41, 34, 0.025); }
-.nav button { padding: 10px 6px; border-color: transparent; font-size: 13.5px; border-radius: 10px; }
+.nav { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; padding: 6px; border: 1px solid #d5e5dd; background: #eef5f1; border-radius: 14px; margin: 16px 0 24px; box-shadow: 0 1px 3px rgba(15, 41, 34, 0.03); }
+.nav button { padding: 10px 8px; border-color: transparent; font-size: 13.5px; font-weight: 600; border-radius: 10px; min-height: 44px; line-height: 1.4; color: #385347; }
+.nav button:hover { background: rgba(255, 255, 255, 0.7); color: #0e6b52; }
+.nav button[aria-pressed=true] { background: #0e6b52; border-color: #0e6b52; color: #ffffff; font-weight: 700; box-shadow: 0 2px 8px rgba(14, 107, 82, 0.22); }
 .unread { min-width: 20px; height: 20px; display: inline-grid; place-items: center; padding: 0 6px; border-radius: 999px; color: #fff; background: #b43d4a; font-size: 11px; font-weight: 800; }
 .sectionHeading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 14px; margin: 18px 0 14px; }
 .card { border: 1px solid var(--line); border-radius: 16px; padding: 22px 24px; background: #fff; margin-bottom: 18px; min-width: 0; overflow-wrap: anywhere; box-shadow: 0 1px 2px rgba(15, 41, 34, 0.025), 0 4px 12px rgba(15, 41, 34, 0.02); transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.2s cubic-bezier(0.22, 1, 0.36, 1); }
@@ -79,7 +81,7 @@
 .modalDialog::backdrop { background: rgba(11, 37, 40, 0.55); backdrop-filter: blur(4px); }
 .modalHeader { display: flex; align-items: center; justify-content: space-between; padding: 18px 24px; background: #f4f8f5; border-bottom: 1px solid #d8e8dc; }
 .modalHeader h3 { margin: 0; font-size: 18px; color: #176e53; }
-.modalCloseBtn { border: 1px solid #c5d6ca; border-radius: 50%; width: 36px; height: 36px; padding: 0; display: grid; place-items: center; font-size: 20px; background: #ffffff; color: #173c36; cursor: pointer; }
+.modalCloseBtn { border: 1px solid #c5d6ca; border-radius: 50%; width: 44px; height: 44px; min-width: 44px; min-height: 44px; padding: 0; display: grid; place-items: center; font-size: 20px; background: #ffffff; color: #173c36; cursor: pointer; }
 .modalCloseBtn:hover { background: #edf5ef; }
 .modalBody { padding: 20px 24px; overflow-y: auto; flex: 1; }
 .selfCheckGuide { padding: 18px 20px; border: 1.5px solid #b7dcce; border-radius: 14px; background: #f4faf6; margin: 18px 0 20px; }
@@ -151,6 +153,229 @@
   padding: 10px 18px 18px;
   border-top: 1px solid #dceade;
   animation: clinicalSlideDown 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Patient Health Status Banner & Visual Vitals Gauges */
+.patientHealthBanner {
+  background: linear-gradient(145deg, #f0f8f4 0%, #ffffff 100%);
+  border: 1.5px solid #cce2d6;
+  border-radius: 20px;
+  padding: 22px 26px;
+  margin: 18px 0 20px;
+  box-shadow: 0 3px 14px rgba(15, 41, 34, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.patientHealthTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.patientHealthStatusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 13.5px;
+  font-weight: 750;
+  border: 1px solid transparent;
+}
+
+.statusNormal {
+  background: #e8f7ee;
+  color: #106646;
+  border-color: #a4ddba;
+}
+
+.statusWarning {
+  background: #fff8e8;
+  color: #8c6008;
+  border-color: #ebd094;
+}
+
+.statusCritical {
+  background: #fff0f2;
+  color: #a62a3c;
+  border-color: #f2afb9;
+}
+
+.statusStale {
+  background: #fbf7ee;
+  color: #7d5918;
+  border-color: #e5cca1;
+}
+
+.patientHealthTitle {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 800;
+  color: #113628;
+  line-height: 1.35;
+}
+
+.patientHealthDesc {
+  margin: 0;
+  font-size: 14.5px;
+  color: #264a3a;
+  line-height: 1.65;
+}
+
+.patientHealthMetaRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.patientHealthChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  background: #ffffff;
+  border: 1px solid #d3e5dc;
+  border-radius: 999px;
+  font-size: 13px;
+  color: #1a4233;
+}
+
+.patientVitalsGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin: 18px 0 20px;
+}
+
+.patientVitalCard {
+  background: #ffffff;
+  border: 1.5px solid #d5e6dc;
+  border-radius: 18px;
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 2px 8px rgba(15, 41, 34, 0.03);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  min-height: 200px;
+}
+
+.patientVitalCard:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(15, 41, 34, 0.06);
+}
+
+.patientVitalHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.patientVitalTitle {
+  font-size: 14.5px;
+  font-weight: 750;
+  color: #1b4535;
+  margin: 0;
+}
+
+.patientVitalValueRow {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 2px 0;
+}
+
+.patientVitalNumber {
+  font-size: 38px;
+  font-weight: 800;
+  color: #113628;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.patientVitalUnit {
+  font-size: 13.5px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.patientGaugeTrack {
+  height: 9px;
+  border-radius: 999px;
+  background: #eef5f1;
+  position: relative;
+  overflow: hidden;
+  margin: 4px 0;
+}
+
+.patientGaugeFill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.35s ease, background 0.35s ease;
+}
+
+.patientVitalRangeText {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.patientVitalHint {
+  font-size: 13px;
+  color: #176e53;
+  font-weight: 650;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.nightShift {
+  background: #0d1820;
+  color: #e6f1ee;
+  border-radius: 20px;
+  padding: 16px;
+}
+.nightShift .hero,
+.nightShift .card,
+.nightShift .nav,
+.nightShift .stat,
+.nightShift .guideGrid > div,
+.nightShift .selfCheckCard,
+.nightShift .patientHealthBanner,
+.nightShift .patientVitalCard {
+  background: #12212b;
+  border-color: #243c4c;
+  color: #e6f1ee;
+}
+.nightShift .patientHealthTitle,
+.nightShift .patientVitalTitle,
+.nightShift .patientVitalNumber {
+  color: #e6f1ee;
+}
+.nightShift .patientHealthChip {
+  background: #182d3b;
+  border-color: #2c4a5e;
+  color: #e6f1ee;
+}
+.nightShift .patientGaugeTrack {
+  background: #182b38;
+}
+.nightShift .learnMoreDrawer,
+.nightShift .inlineDetails {
+  background: #0f1c25;
+  border-color: #243c4c;
+}
+@media (max-width: 960px) {
+  .patientVitalsGrid {
+    grid-template-columns: 1fr;
+  }
 }
 @media (max-width: 850px) { .split, .guideGrid, .summaryGuideGrid, .careStateGrid, .selfCheckGrid { grid-template-columns: 1fr; } .nav { grid-template-columns: repeat(3, minmax(0, 1fr)); } .hero { align-items: flex-start; } }
 @media (max-width: 600px) {

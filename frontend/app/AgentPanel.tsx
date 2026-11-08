@@ -157,7 +157,7 @@ export default function AgentPanel({ openPatient, openEvidence }: { openPatient:
     <section className={styles.panel}>
       <details className={styles.learnMoreDrawer}>
         <summary className={styles.learnMoreSummary}>
-          <span>👥 ผังขอบเขตหน้าที่และความรับผิดชอบของทีม AI Agent (Learn More)</span>
+          <span>ผังขอบเขตหน้าที่และความรับผิดชอบของทีม AI Agent (Learn More)</span>
           <span className={styles.learnMoreBadge}>ดูขอบเขตหน้าที่</span>
         </summary>
         <div className={styles.learnMoreBody}>
@@ -203,7 +203,7 @@ export default function AgentPanel({ openPatient, openEvidence }: { openPatient:
     <section className={styles.panel}>
       <details className={styles.learnMoreDrawer}>
         <summary className={styles.learnMoreSummary}>
-          <span>🔍 รายละเอียดสำหรับตรวจสอบระบบและอธิบายอาจารย์ · Audit Trace &amp; Model Registry (Learn More)</span>
+          <span>รายละเอียดสำหรับตรวจสอบระบบและอธิบายอาจารย์ · Audit Trace &amp; Model Registry (Learn More)</span>
           <span className={styles.learnMoreBadge}>Audit &amp; Registry</span>
         </summary>
         <div className={styles.learnMoreBody}>
@@ -220,7 +220,7 @@ export default function AgentPanel({ openPatient, openEvidence }: { openPatient:
           {run && <><div className={styles.titleRow}><div><b>{decisions[run.decision] ?? run.decision}</b><p className={styles.muted}>{run.patient_id} · {run.source} · {run.model_version} · {when(run.created_at)}</p></div><button className={styles.link} onClick={() => openPatient(run.patient_id)}>เปิด {run.patient_id}</button></div><div className={styles.steps}>{run.steps.map((step) => <div className={styles.step} key={step.id}><span className={styles.stepNumber}>{step.sequence}</span><small>{agentLabels[step.agent_id] ?? step.agent_id}</small><b>{toolLabels[step.tool_name] ?? step.tool_name}</b><small>{step.status}</small><p>{stepSummary(step)}</p></div>)}</div></>}
           <details className={styles.learnMoreDrawer}>
             <summary className={styles.learnMoreSummary}>
-              <span>📚 Dataset และ Model Registry ทั้งหมดในระบบ (Learn More)</span>
+              <span>Dataset และ Model Registry ทั้งหมดในระบบ (Learn More)</span>
               <span className={styles.learnMoreBadge}>ดูตาราง Registry</span>
             </summary>
             <div className={styles.learnMoreBody}>

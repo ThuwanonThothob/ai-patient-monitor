@@ -10,10 +10,11 @@ export default function PortalShell({ audience, children }: { audience: "staff" 
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [checking, setChecking] = useState(true);
   const [credential, setCredential] = useState("");
-  const [username, setUsername] = useState('clinician');
+  const [username, setUsername] = useState('doctor5');
   const [patientPassword, setPatientPassword] = useState('');
   const [demoLogin, setDemoLogin] = useState(false);
   const [testAccount, setTestAccount] = useState<{ subject: string; display_name: string; role: string } | null>(null);
+  const [roleLabel, setRoleLabel] = useState<string>('');
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [connectionError, setConnectionError] = useState('');
@@ -30,8 +31,13 @@ export default function PortalShell({ audience, children }: { audience: "staff" 
       clearTimeout(timer);
       const version = sessionVersion.current;
       try {
-        const data = await requestJson<{ subject: string; display_name?: string }>("/api/session", { signal: abort.signal });
-        if (!stopped && version === sessionVersion.current) { setSubject(data.subject); setDisplayName(data.display_name ?? data.subject); setConnectionError(''); }
+        const data = await requestJson<{ subject: string; display_name?: string; role?: string; role_type?: string }>("/api/session", { signal: abort.signal });
+        if (!stopped && version === sessionVersion.current) {
+          setSubject(data.subject);
+          setDisplayName(data.display_name ?? data.subject);
+          setRoleLabel(data.role_type === 'central' ? 'Central Console' : data.role_type === 'doctor' ? 'Doctor' : (data.role ?? ''));
+          setConnectionError('');
+        }
       } catch (error) {
         if (!stopped && version === sessionVersion.current) {
           if (error instanceof ApiError && [401, 403].includes(error.status)) { setSubject(null); setDisplayName(null); setConnectionError(''); }
@@ -53,11 +59,11 @@ export default function PortalShell({ audience, children }: { audience: "staff" 
   async function login(event: FormEvent) {
     event.preventDefault(); if (busy) return; sessionVersion.current++; setBusy(true); setError("");
     try {
-      const data = await requestJson<{ subject: string; display_name?: string }>("/api/session/login", {
+      const data = await requestJson<{ subject: string; display_name?: string; role?: string; role_type?: string }>("/api/session/login", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(audience === "patient" ? { patient_id: credential, password: patientPassword } : { username, password: credential }),
       });
-      sessionVersion.current++; setSubject(data.subject); setDisplayName(data.display_name ?? data.subject); setCredential(""); setPatientPassword(''); setConnectionError('');
+      sessionVersion.current++; setSubject(data.subject); setDisplayName(data.display_name ?? data.subject); setRoleLabel(data.role_type === 'central' ? 'Central Console' : data.role_type === 'doctor' ? 'Doctor' : (data.role ?? '')); setCredential(""); setPatientPassword(''); setConnectionError('');
     } catch (e) { setError(e instanceof ApiError && e.status === 401 ? 'ข้อมูลเข้าสู่ระบบไม่ถูกต้อง' : e instanceof Error ? e.message : "เชื่อมต่อไม่ได้"); }
     finally { setBusy(false); }
   }
@@ -79,11 +85,80 @@ export default function PortalShell({ audience, children }: { audience: "staff" 
     <label htmlFor="credential">{audience === "patient" ? "รหัสผู้ป่วย" : "รหัสผ่านบุคลากร"}</label>
     <input id="credential" required value={credential} onChange={(e) => setCredential(e.target.value)} type={audience === "patient" ? "text" : "password"} autoComplete={audience === "patient" ? "username" : "current-password"} autoCapitalize="none" spellCheck={false} placeholder={audience === "patient" ? "เช่น A001 หรือ test_p" : "รหัสผ่านของบัญชีบุคลากร"} />
     {audience === 'patient' && <><label htmlFor="patient-password">รหัสผ่าน {demoLogin ? '(บัญชีสาธิตที่ยังไม่ตั้งรหัสผ่านเว้นว่างได้)' : ''}</label><input id="patient-password" type="password" autoComplete="current-password" required={!demoLogin} value={patientPassword} onChange={e => setPatientPassword(e.target.value)} /></>}
-    {testAccount && <aside className="test-account"><b>บัญชี TEST สำหรับสาธิต</b><span>{testAccount.role} · {testAccount.display_name}</span><code>ID: {testAccount.subject} · Password: {audience === 'staff' ? 'admin1234' : 'admin4321'}</code><button type="button" onClick={() => { if (audience === 'staff') { setUsername('test_d'); setCredential('admin1234'); } else { setCredential('TEST_P'); setPatientPassword('admin4321'); } }}>กรอกบัญชีทดสอบ</button></aside>}
+    {testAccount && (
+      <aside className="test-account" aria-label="เลือกบัญชีเข้าสู่ระบบ">
+        <b>
+          <span>เลือกบัญชีเข้าสู่ระบบ (ระบบจำลอง)</span>
+          <small style={{ fontSize: 11, fontWeight: 500, color: '#426b5c' }}>คลิกเพื่อเลือกบัญชี</small>
+        </b>
+        {audience === 'staff' ? (
+          <div className="demo-role-grid">
+            <button
+              type="button"
+              className={`demo-role-card ${username === 'doctor5' ? 'is-selected' : ''}`}
+              onClick={() => { setUsername('doctor5'); setCredential('doctor1234'); }}
+            >
+              <div className="demo-role-info">
+                <span className="demo-role-title">บัญชีแพทย์ (Doctor) · นพ. วิชัย ใจดี</span>
+                <span className="demo-role-sub">ดูแล 5 เตียงเฉพาะกลุ่ม (A001–A004, B001) · สื่อสารแชทกับผู้ป่วย</span>
+              </div>
+              <span className="demo-role-badge">doctor5</span>
+            </button>
+            <button
+              type="button"
+              className={`demo-role-card ${username === 'central' ? 'is-selected' : ''}`}
+              onClick={() => { setUsername('central'); setCredential('central1234'); }}
+            >
+              <div className="demo-role-info">
+                <span className="demo-role-title">บัญชีศูนย์กลาง (Central Console)</span>
+                <span className="demo-role-sub">เฝ้าระวังภาพรวมหอผู้ป่วย 60 เตียง · ไม่มีระบบแชท</span>
+              </div>
+              <span className="demo-role-badge">central</span>
+            </button>
+            <button
+              type="button"
+              className={`demo-role-card ${username === 'test_d' ? 'is-selected' : ''}`}
+              onClick={() => { setUsername('test_d'); setCredential('admin1234'); }}
+            >
+              <div className="demo-role-info">
+                <span className="demo-role-title">บัญชีแพทย์ทดสอบ · {testAccount.display_name}</span>
+                <span className="demo-role-sub">ดูแลผู้ป่วย Home-Care (TEST_P) · แชทสองทาง</span>
+              </div>
+              <span className="demo-role-badge">{testAccount.subject}</span>
+            </button>
+          </div>
+        ) : (
+          <div className="demo-role-grid">
+            <button
+              type="button"
+              className={`demo-role-card ${credential === 'A001' ? 'is-selected' : ''}`}
+              onClick={() => { setCredential('A001'); setPatientPassword(''); }}
+            >
+              <div className="demo-role-info">
+                <span className="demo-role-title">บัญชีผู้ป่วยใน · เตียง A001</span>
+                <span className="demo-role-sub">ดูข้อมูลเฉพาะตนเอง · แชทกับ นพ. วิชัย (doctor5)</span>
+              </div>
+              <span className="demo-role-badge">A001</span>
+            </button>
+            <button
+              type="button"
+              className={`demo-role-card ${credential === 'TEST_P' ? 'is-selected' : ''}`}
+              onClick={() => { setCredential('TEST_P'); setPatientPassword('admin4321'); }}
+            >
+              <div className="demo-role-info">
+                <span className="demo-role-title">บัญชีผู้ป่วยทดสอบ · {testAccount.display_name}</span>
+                <span className="demo-role-sub">ดูข้อมูลเฉพาะตนเอง · แชทกับแพทย์ทดสอบ (test_d)</span>
+              </div>
+              <span className="demo-role-badge">TEST_P</span>
+            </button>
+          </div>
+        )}
+      </aside>
+    )}
     <button disabled={busy}>{busy ? "กำลังเข้าสู่ระบบ…" : audience === "patient" ? "ดูข้อมูลของฉัน →" : "เข้าสู่ศูนย์ดูแลผู้ป่วย →"}</button>
     {error && <p role="alert">{error}</p>}
     {connectionError && <p role="status">{connectionError} <button type="button" disabled={busy} onClick={() => setCheckVersion(value => value + 1)}>ตรวจอีกครั้ง</button></p>}
     <small className="login-note">{demoLogin ? 'โหมดสาธิต · ข้อมูลผู้ป่วยสมมติ · ผู้ดูแลระบบสามารถสร้างบัญชีรายบุคคลและปิดการเข้าด้วย ID อย่างเดียวได้' : 'ใช้บัญชีที่ผู้ดูแลระบบออกให้ หากลืมรหัสผ่านให้ติดต่อผู้ดูแลระบบ'}</small>
   </form></div></main>;
-  return <><a className="skip-link" href="#main-content">ข้ามไปเนื้อหาหลัก</a><header className="portal-session"><Brand /><span className="demo-badge">RESEARCH DEMO</span><span className="session-user-pill">{audience === "patient" ? "ผู้ป่วย" : "ทีมดูแล"} · {displayName ?? subject} ({subject})</span><AccountProfile key={`${audience}-${subject}`} audience={audience} /><button className="logout-button" disabled={busy} onClick={() => void logout()}>{busy ? 'กำลังออก…' : 'ออกจากระบบ'}</button></header>{connectionError && <div className="connection-banner" role="status">{connectionError} <button onClick={() => setCheckVersion(value => value + 1)}>ลองเชื่อมต่อใหม่</button></div>}{error && <div className="connection-banner" role="alert">{error}</div>}<Fragment key={`${audience}-${subject}`}>{children}</Fragment></>;
+  return <><a className="skip-link" href="#main-content">ข้ามไปเนื้อหาหลัก</a><header className="portal-session"><Brand /><span className="demo-badge">RESEARCH DEMO</span><span className="session-user-pill">{audience === "patient" ? "ผู้ป่วย" : (roleLabel || "ทีมดูแล")} · {displayName ?? subject} ({subject})</span><AccountProfile key={`${audience}-${subject}`} audience={audience} /><button className="logout-button" disabled={busy} onClick={() => void logout()}>{busy ? 'กำลังออก…' : 'ออกจากระบบ'}</button></header>{connectionError && <div className="connection-banner" role="status">{connectionError} <button onClick={() => setCheckVersion(value => value + 1)}>ลองเชื่อมต่อใหม่</button></div>}{error && <div className="connection-banner" role="alert">{error}</div>}<Fragment key={`${audience}-${subject}`}>{children}</Fragment></>;
 }

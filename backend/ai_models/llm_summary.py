@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from pathlib import Path
 
 from google import genai
@@ -18,12 +19,29 @@ if load_dotenv:
 MODEL_NAME = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 FALLBACK_MODEL_PREFERENCES = (
     "gemini-2.5-flash",
+    "gemini-2.5-pro",
+    "gemini-2.5-flash-lite",
     "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-3.6-flash",
-    "gemini-3.7-flash",
-    "gemini-3.8-flash",
 )
+
+FORBIDDEN_CLINICAL_PATTERNS = re.compile(
+    r"(สั่งจ่ายยา|ให้ยา\s*\d+|ปรับเครื่องช่วยหายใจ|วินิจฉัยว่าเป็นโรค|ต้องผ่าตัดด่วน|prescribe|administer\s+\d+\s*mg|definitive\s+diagnosis)",
+    re.IGNORECASE,
+)
+
+
+def enforce_clinical_llm_guardrails(text: str, vitals_citation: str | None = None, fallback_text: str = "") -> str:
+    """Enforce Guardrail #1 & #4: filter prescriptive/diagnostic wording and append reading citation."""
+    cleaned_text = text
+    if FORBIDDEN_CLINICAL_PATTERNS.search(text):
+        cleaned_text = (
+            fallback_text or
+            "⚠️ ระบบตรวจพบข้อความที่มีลักษณะสั่งการรักษาหรือวินิจฉัยโรคโดยตรง ซึ่งขัดกับหลักความปลอดภัย "
+            "(ระบบนี้เป็นเพียงเครื่องมือสนับสนุนการตัดสินใจเบื้องต้น ไม่ใช่ SaMD และไม่สามารถใช้แทนการวินิจฉัยของแพทย์ได้)"
+        )
+    if vitals_citation:
+        cleaned_text = cleaned_text.rstrip() + "\n\n" + vitals_citation.strip()
+    return cleaned_text
 
 print("🤖 กำลังเตรียมระบบ AI ผู้ช่วยถาม-ตอบ (Gemini Chat - อัปเดตใหม่)...")
 
@@ -115,7 +133,10 @@ IsolationForest ตรวจรูปแบบต่างจากชุดฝ�
             print(f"ℹ️ Gemini model fallback: {MODEL_NAME} -> {fallback_model}")
             response = client.models.generate_content(model=fallback_model, contents=prompt)
         text = (response.text or "").strip()
-        return text or "ขออภัย Gemini ไม่ได้ส่งข้อความตอบกลับ กรุณาลองใหม่อีกครั้ง"
+        if not text:
+            return "ขออภัย Gemini ไม่ได้ส่งข้อความตอบกลับ กรุณาลองใหม่อีกครั้ง"
+        citation = f"📋 อ้างอิงสัญญาณชีพที่ใช้: HR {latest_hr} bpm, SpO2 {latest_spo2}% (ระบบสนับสนุนการตัดสินใจเท่านั้น ไม่ใช่การวินิจฉัยทางการแพทย์)"
+        return enforce_clinical_llm_guardrails(text, vitals_citation=citation)
         
     except Exception as e:
         # Do not log request data or the API key. Return a useful, safe diagnosis.
@@ -159,7 +180,8 @@ def summarize_dashboard_section(section: str, snapshot: dict) -> str:
             if not fallback_model:
                 return "ไม่พบ Gemini model ที่ใช้งานได้สำหรับสรุปข้อมูล"
             response = client.models.generate_content(model=fallback_model, contents=prompt)
-        return (response.text or "").strip() or "Gemini ไม่ได้ส่งข้อความสรุปกลับมา"
+        raw_text = (response.text or "").strip() or "Gemini ไม่ได้ส่งข้อความสรุปกลับมา"
+        return enforce_clinical_llm_guardrails(raw_text)
     except Exception as error:
         print(f"❌ Dashboard AI Summary Error ({type(error).__name__})")
         return "ไม่สามารถสร้าง AI summary ได้ในขณะนี้ แต่ข้อมูลตัวเลขยังอัปเดตตามปกติ"

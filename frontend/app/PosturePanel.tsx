@@ -52,7 +52,7 @@ export default function PosturePanel() {
       <p>ทดลองด้วย Pressure Map Dataset (PMD) จาก PhysioNet · 3 ท่ามาตรฐาน · เทียบ Logistic Regression, Random Forest และ baseline ที่ทายท่าพบบ่อยที่สุดในชุดฝึก</p>
       <details className={s.learnMoreDrawer}>
         <summary className={s.learnMoreSummary}>
-          <span>🛏️ ระเบียบวิธีสกัด 128 Spatial Features และเกณฑ์งดสรุปท่า (Learn More)</span>
+          <span>ระเบียบวิธีสกัด 128 Spatial Features และเกณฑ์งดสรุปท่า (Learn More)</span>
           <span className={s.learnMoreBadge}>PMD 32×64 Pipeline</span>
         </summary>
         <div className={s.learnMoreBody}>
@@ -69,7 +69,7 @@ export default function PosturePanel() {
       {report?.status !== "READY" && <p role="status">{report?.message ?? "กำลังโหลดผลเทรน…"}</p>}
     </section>
     {report?.status === "READY" && metrics && <>
-      <div className={s.stats}><article><span>โมเดลเลือกจาก validation macro-F1</span><strong>{report.selected_model === "logistic" ? "Logistic Regression" : "Random Forest"}</strong><small>ไม่ได้เลือกจากคะแนน test</small></article><article><span>Test macro-F1 · ทุกเฟรมก่อนงดสรุป</span><strong>{metric(metrics.macro_f1, 3)}</strong><small>Accuracy {metric(metrics.accuracy * 100, 1)}% · {metrics.samples} เฟรมจาก 3 คน</small></article><article><span>Coverage หลังใช้ cutoff 0.60</span><strong>{metric(report.coverage * 100, 1)}%</strong><small>Accuracy เฉพาะที่รับผล {report.accepted_accuracy == null ? "—" : metric(report.accepted_accuracy * 100, 1) + "%"} · ไม่ใช่ความมั่นใจทางคลินิก</small></article></div>
+      <div className={s.stats}><article><span>โมเดลเลือกจาก validation macro-F1</span><strong>{report.selected_model === "logistic" ? "Logistic Regression" : "Random Forest"}</strong><small>ไม่ได้เลือกจากคะแนน test</small></article><article><span>Test macro-F1 · ทุกเฟรมก่อนงดสรุป</span><strong>{metric(metrics.macro_f1, 3)}</strong><small>Agreement {metric(metrics.accuracy * 100, 1)}% · {metrics.samples} เฟรมจาก 3 คน</small></article><article><span>Coverage หลังใช้ cutoff 0.60</span><strong>{metric(report.coverage * 100, 1)}%</strong><small>Agreement เฉพาะที่รับผล {report.accepted_accuracy == null ? "—" : metric(report.accepted_accuracy * 100, 1) + "%"} · ไม่ใช่ความมั่นใจทางคลินิก</small></article></div>
       <div className={s.layout}>
         <section className={s.card}><h3>ลองดูเคสที่โมเดลไม่เคยฝึก</h3><label>ตัวกรองย้อนหลัง<select value={outcome} onChange={(e) => { setOutcome(e.target.value); setLoadedOutcome(null); setSelected(null); setData(null); setCases([]); }}><option value="all">ทั้งหมด · ซ่อนเฉลย</option><option value="correct">รับผลและทายถูก</option><option value="incorrect">รับผลแต่ทายผิด</option><option value="abstained">งดสรุปท่า</option></select></label><p className={s.muted}>ตัวกรองถูก/ผิดใช้เฉลยย้อนหลังเพื่อวิเคราะห์ข้อผิดพลาด ไม่ใช่การทดสอบแบบไม่รู้คำตอบ</p><label>เฟรมทดสอบ<select disabled={caseListPending || !cases.length} value={selected ?? ""} onChange={(e) => { setSelected(Number(e.target.value)); setReveal(false); setData(null); }}>{!cases.length && <option value="">{caseListPending ? "กำลังโหลดรายการ…" : "ไม่มีเคสในกลุ่มนี้"}</option>}{cases.map((c) => <option key={c.ref} value={c.ref}>เคส {c.ref + 1} · ผู้เข้าร่วม S{c.subject}</option>)}</select></label><p className={s.muted}>เฟรมในท่าเดียวกันมีความสัมพันธ์กัน แต่ละเคสไม่ใช่ผู้ป่วยคนใหม่</p></section>
         <section className={s.card}>{visible ? <>
@@ -103,19 +103,19 @@ export default function PosturePanel() {
       </div>
       <section className={s.card}>
         <h3>หลักฐานเปรียบเทียบโมเดล</h3>
-        <div className={s.scroll}><table><thead><tr><th>โมเดล</th><th>Validation macro-F1</th><th>Test macro-F1</th><th>Test accuracy</th></tr></thead><tbody>{Object.entries(report.metrics).map(([name, values]) => <tr key={name}><td>{name}{name === report.selected_model ? " · เลือกใช้" : ""}</td><td>{metric(values.validation.macro_f1, 3)}</td><td>{metric(values.test.macro_f1, 3)}</td><td>{metric(values.test.accuracy * 100, 1)}%</td></tr>)}</tbody></table></div>
+        <div className={s.scroll}><table><thead><tr><th>โมเดล</th><th>Validation macro-F1</th><th>Test macro-F1</th><th>Test Agreement</th></tr></thead><tbody>{Object.entries(report.metrics).map(([name, values]) => <tr key={name}><td>{name}{name === report.selected_model ? " · เลือกใช้" : ""}</td><td>{metric(values.validation.macro_f1, 3)}</td><td>{metric(values.test.macro_f1, 3)}</td><td>{metric(values.test.accuracy * 100, 1)}%</td></tr>)}</tbody></table></div>
         <h3 style={{ marginTop: 24 }}>Confusion matrix · แถว = เฉลย / คอลัมน์ = คำทำนาย</h3>
         <div className={s.scroll}><table><thead><tr><th>จำนวนเฟรม</th>{report.classes.map((c) => <th key={c}>{labels[c]}</th>)}</tr></thead><tbody>{metrics.confusion_matrix.map((row, index) => <tr key={index}><th>{labels[report.classes[index]]}</th>{row.map((n, j) => <td key={j}>{n}</td>)}</tr>)}</tbody></table></div>
-        <p>Test รายคน: {Object.entries(metrics.per_subject_accuracy).map(([id, score]) => `${id} ${metric(score * 100, 1)}%`).join(" · ")}</p>
+        <p>Test Agreement รายคน: {Object.entries(metrics.per_subject_accuracy).map(([id, score]) => `${id} ${metric(score * 100, 1)}%`).join(" · ")}</p>
         <details className={s.learnMoreDrawer}>
           <summary className={s.learnMoreSummary}>
-            <span>📋 ที่มา การแบ่งข้อมูล และข้อจำกัดของชุดข้อมูล PMD (Learn More)</span>
+            <span>ที่มา การแบ่งข้อมูล และข้อจำกัดของชุดข้อมูล PMD (Learn More)</span>
             <span className={s.learnMoreBadge}>Model SHA-256 &amp; Splits</span>
           </summary>
           <div className={s.learnMoreBody}>
             <p>ใช้เฉพาะ Experiment I ท่า 1, 2, 3 รวม 39 ไฟล์ · ลดการสุ่มซ้ำโดยใช้ทุกเฟรมที่ 5 · pooling 8×16 / normalize ด้วยผลรวม · เฟรมที่ไม่ผ่านคุณภาพ {report.excluded_frames}</p>
             {Object.entries(report.splits).map(([name, ids]) => <p key={name}>{name}: {ids.map((id) => `S${id}`).join(", ")} · {report.split_counts[name]} เฟรม</p>)}
-            <p>แก้ importer หลังการทดลองแรกเพราะค่าดิบเกิน 1,000 ไม่ได้หมายความว่าไฟล์เสีย จึงถือผลเป็น exploratory และยังต้องมีชุดทดสอบใหม่ก่อนอ้างความแม่นยำสุดท้าย</p>
+            <p>แก้ importer หลังการทดลองแรกเพราะค่าดิบเกิน 1,000 ไม่ได้หมายความว่าไฟล์เสีย จึงถือผลเป็น exploratory และยังต้องมีชุดทดสอบใหม่ก่อนอ้างสมรรถนะสุดท้าย</p>
             <p>ไม่มีคลาสเตียงว่าง ตกเตียง หรือแผลกดทับ ข้อมูลคนละท่าเป็นการทดลองแยก ไม่ใช่เหตุการณ์พลิกตัวต่อเนื่อง</p>
             <p><a href={report.source} target="_blank" rel="noreferrer">Dataset ต้นฉบับและเอกสารกำกับ</a> · {report.license} · Pouyan et al. (2017)</p>
             <p style={{ overflowWrap: "anywhere" }}>Run {report.run_id}<br />Model SHA-256: {report.model_sha256}</p>

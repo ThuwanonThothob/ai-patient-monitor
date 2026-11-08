@@ -43,12 +43,20 @@ def check_vital_quality_gate(
     - Sensor disconnect / missing: hr <= 0, spo2 <= 0, or non-finite values -> abstain=True, is_device_fault=True, is_crisis=False
     - Extreme SpO2 artifact / probe off-body: spo2 < 50% or spo2 > 100% -> abstain=True, is_device_fault=True, is_crisis=False
     - Extreme sudden HR jump (artifact/lead-off spike): abs(hr - previous_hr) > 50 bpm within 1 second -> abstain=True, is_device_fault=True, is_crisis=False
-    - Non-physiological limits: hr < 20 or hr > 260 -> abstain=True, is_device_fault=True, is_crisis=False
+    - Non-physiological limits: hr < 30 or hr > 240 -> abstain=True, is_device_fault=True, is_crisis=False
+    - Respiratory rate limits (when provided): rr <= 0 or rr > 60 or non-finite -> abstain=True, is_device_fault=True, is_crisis=False
 
     Returns:
         VitalQualityResult with abstain=True, is_device_fault=True, and is_crisis=False on equipment issues.
     """
-    if hr is None or spo2 is None or not np.isfinite(hr) or not np.isfinite(spo2):
+    if (
+        hr is None
+        or spo2 is None
+        or isinstance(hr, bool)
+        or isinstance(spo2, bool)
+        or not np.isfinite(hr)
+        or not np.isfinite(spo2)
+    ):
         return VitalQualityResult({
             "abstain": True,
             "is_device_fault": True,
@@ -88,7 +96,7 @@ def check_vital_quality_gate(
         })
 
     # Extreme sudden HR jump (> 50 bpm in 1 second)
-    if previous_hr is not None and np.isfinite(previous_hr) and time_delta > 0:
+    if previous_hr is not None and not isinstance(previous_hr, bool) and np.isfinite(previous_hr) and time_delta > 0:
         rate_of_change = abs(hr - previous_hr) / time_delta
         if rate_of_change > 50.0:
             return VitalQualityResult({
@@ -99,8 +107,8 @@ def check_vital_quality_gate(
                 "message": f"อัตราเต้นหัวใจเปลี่ยนฉับพลัน {rate_of_change:.1f} bpm/s เกินขีดจำกัดทางสรีรวิทยา บ่งชี้สัญญาณรบกวน (Motion Artifact / Spike)",
             })
 
-    # Non-physiological heart rate limits
-    if hr < 20 or hr > 260:
+    # Non-physiological heart rate limits (Guardrail #3: 30 <= HR <= 240)
+    if hr < 30 or hr > 240:
         return VitalQualityResult({
             "abstain": True,
             "is_device_fault": True,
@@ -109,15 +117,15 @@ def check_vital_quality_gate(
             "message": f"HR {hr:.0f} bpm อยู่นอกช่วงสรีรวิทยาที่เป็นไปได้ (Equipment / Lead Fault)",
         })
 
-    # Respiratory rate check if provided
-    if respiratory_rate is not None and np.isfinite(respiratory_rate):
-        if respiratory_rate <= 0 or respiratory_rate > 80:
+    # Respiratory rate check if provided (Guardrail #3: 0 < RR <= 60)
+    if respiratory_rate is not None:
+        if isinstance(respiratory_rate, bool) or not np.isfinite(respiratory_rate) or respiratory_rate <= 0 or respiratory_rate > 60:
             return VitalQualityResult({
                 "abstain": True,
                 "is_device_fault": True,
                 "is_crisis": False,
                 "reason": "RESPIRATORY_SENSOR_FAULT",
-                "message": f"อัตราการหายใจ {respiratory_rate:.0f} ครั้ง/นาที ผิดปกติจากอุปกรณ์",
+                "message": f"อัตราการหายใจ {respiratory_rate} ครั้ง/นาที ผิดปกติจากอุปกรณ์",
             })
 
     return VitalQualityResult({
@@ -293,7 +301,11 @@ def check_temporal_and_flatline_gate(
 
     if check_flatline:
         w_arr = np.asarray(window, dtype=float)
-        if np.all(np.isfinite(w_arr)) and np.ptp(w_arr) == 0:
+        is_flat = (
+            (w_arr.ndim == 2 and np.all(np.ptp(w_arr, axis=0) == 0))
+            or np.ptp(w_arr) == 0
+        )
+        if np.all(np.isfinite(w_arr)) and is_flat:
             return VitalQualityResult({
                 "abstain": True,
                 "reason": "FLATLINE_DETECTED",

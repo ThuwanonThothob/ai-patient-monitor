@@ -19,6 +19,13 @@ import notifications
 log = logging.getLogger(__name__)
 
 
+def connect_db(database, timeout=30.0):
+    conn = sqlite3.connect(database, timeout=timeout)
+    conn.execute("PRAGMA busy_timeout = 30000")
+    conn.execute("PRAGMA journal_mode = WAL")
+    return conn
+
+
 def seed_test_care(database):
     """Create one reviewed TEST profile and human-authored demo plans once."""
     now = time.time()
@@ -32,7 +39,7 @@ def seed_test_care(database):
                    'respiratory_rate': {'low': 12, 'high': 24}},
         'reference_minutes': 5, 'use_reference': False,
     }
-    with closing(sqlite3.connect(database, timeout=10)) as conn, conn:
+    with closing(connect_db(database)) as conn, conn:
         if not conn.execute("SELECT 1 FROM care_profile_versions WHERE patient_id='TEST_P'").fetchone():
             conn.execute('''INSERT INTO care_profile_versions
                 (patient_id,version,state,content,saved_at,saved_by,reviewed_at,reviewed_by)
@@ -99,7 +106,7 @@ class TestPatientSimulator:
         result = self.worker.process([reading], now)
         cycle = int(max(0, now - self.started_at) // 240)
         if reading['simulation_state'] == 'ช่วงออกซิเจนลดลงจำลอง' and cycle != self.last_push_cycle:
-            with closing(sqlite3.connect(self.database, timeout=10)) as conn, conn:
+            with closing(connect_db(self.database)) as conn, conn:
                 event_key = f'SIMULATION:{self.started_at:.6f}:{cycle}'
                 notifications.enqueue_simulation(conn, now, event_key=event_key)
             self.last_push_cycle = cycle

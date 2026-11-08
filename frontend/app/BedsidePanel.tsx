@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from 'react';
+import { formatStaleDuration } from './MonitorPanel';
 import s from './Ward.module.css';
 
 type Device = {
   device_id: string; kind: 'vital' | 'pressure_mat'; last_seen: number;
   battery_percent: number; signal_quality: number; sensor_attached: boolean;
-  calibration_due_at?: number | null; status: 'OK' | 'WARNING' | 'CRITICAL' | 'STALE';
+  calibration_due_at?: number | null; status: 'OK' | 'WARNING' | 'CRITICAL' | 'STALE' | 'FAULT';
   issues: string[]; source: string;
 };
 type Posture = {
@@ -73,7 +74,7 @@ function getTurnStatus(dwellSeconds?: number | null) {
       state: 'due',
       badgeClass: s.badgeCritical,
       badgeText: 'ถึงกำหนดพลิกตัวทันที',
-      title: `🚨 ถึงเวลาพลิกตัวทันที (อยู่ท่าเดิม ${minutes} นาที / เกิน 2 ชม.)`,
+      title: `ถึงเวลาพลิกตัวทันที (อยู่ท่าเดิม ${minutes} นาที / เกิน 2 ชม.)`,
       guidance: 'ผู้ป่วยอยู่ท่าเดิมเกิน 2 ชั่วโมง มีความเสี่ยงต่อแผลกดทับสูง ควรเข้าตรวจประเมินผิวหนังและช่วยพลิกตัวจัดท่านอนใหม่ทันที',
       minutes,
       percent,
@@ -86,7 +87,7 @@ function getTurnStatus(dwellSeconds?: number | null) {
       state: 'warning',
       badgeClass: s.badgeWarning,
       badgeText: 'ใกล้ถึงกำหนด',
-      title: `⏳ ใกล้ถึงเวลาพลิกตัว (อีกประมาณ ${remaining} นาที)`,
+      title: `ใกล้ถึงเวลาพลิกตัว (อีกประมาณ ${remaining} นาที)`,
       guidance: `อยู่ท่าเดิมมาแล้ว ${minutes} นาที ควรเตรียมเข้าช่วยจัดท่านอนใหม่ในอีกไม่เกิน ${remaining} นาที`,
       minutes,
       percent,
@@ -98,7 +99,7 @@ function getTurnStatus(dwellSeconds?: number | null) {
     state: 'normal',
     badgeClass: s.badgeGood,
     badgeText: 'ตามเกณฑ์รอบเวลา',
-    title: `✓ ท่าอยู่ในเกณฑ์เวลา (อยู่ท่านี้ ${minutes} นาที)`,
+    title: `ท่าอยู่ในเกณฑ์เวลา (อยู่ท่านี้ ${minutes} นาที)`,
     guidance: `พลิกตัวตามรอบปกติ รอบถัดไปในอีกประมาณ ${remaining} นาที (เกณฑ์มาตรฐานทุก 2 ชม.)`,
     minutes,
     percent,
@@ -114,6 +115,11 @@ export default function BedsidePanel({ patientId }: { patientId: string }) {
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  const [nowSec, setNowSec] = useState(() => Date.now() / 1000);
+  useEffect(() => {
+    const clockTimer = window.setInterval(() => setNowSec(Date.now() / 1000), 1000);
+    return () => window.clearInterval(clockTimer);
+  }, []);
   const load = useCallback(async () => {
     try {
       const response = await fetch(`/api/bedside/patients/${patientId}`, { cache: 'no-store' });
@@ -152,22 +158,33 @@ export default function BedsidePanel({ patientId }: { patientId: string }) {
       <div className={s.deviceGrid}>{data.devices.length ? data.devices.map(device => {
         const bat = getBatteryStatus(device.battery_percent);
         const sig = getSignalStatus(device.signal_quality);
-        const isPressureMat = device.kind === 'pressure_mat';
+        const isDeviceStale = !device?.last_seen || device?.status === 'STALE' || device?.status === 'FAULT' || (nowSec - Number(device.last_seen) > 15);
+        const elapsedDeviceSec = device?.last_seen && Number.isFinite(Number(device.last_seen))
+          ? Math.max(0, Math.floor(nowSec - Number(device.last_seen)))
+          : null;
+        const isDeviceCritical = !device?.last_seen || device?.status === 'FAULT' || device?.status === 'CRITICAL' || (elapsedDeviceSec !== null && elapsedDeviceSec >= 60);
+        const updateState = !isDeviceStale ? 'good' : isDeviceCritical ? 'critical' : 'warn';
+        const updateBadgeClass = !isDeviceStale ? s.badgeGood : isDeviceCritical ? s.badgeCritical : s.badgeWarning;
+        const updateBadgeText = !isDeviceStale
+          ? 'สด'
+          : device?.status === 'FAULT'
+            ? `ขัดข้อง${elapsedDeviceSec !== null ? ` (${elapsedDeviceSec}s)` : ''}`
+            : `ขาดช่วง${elapsedDeviceSec !== null ? ` (${elapsedDeviceSec}s)` : ''}`;
         return (
-          <article key={device.kind} className={s.deviceCard} data-status={device.status}>
+          <article key={device.kind} className={s.deviceCard} data-status={isDeviceStale && device.status === 'OK' ? 'STALE' : device.status}>
             <div className={s.cardHead}>
               <div>
-                <b>{isPressureMat ? '🛏️ ' : '🩺 '}{kindLabel[device.kind]}</b>
+                <b>{kindLabel[device.kind]}</b>
                 <small className={s.blockSmall} style={{ fontSize: 11, color: 'var(--muted)' }}>
                   รหัสเครื่อง: {device.device_id}
                 </small>
               </div>
               <span className={s.pill} style={{
-                borderColor: device.status === 'OK' ? '#247354' : device.status === 'WARNING' ? '#936511' : '#ad394b',
-                color: device.status === 'OK' ? '#1b5e46' : device.status === 'WARNING' ? '#80520b' : '#a42c3d',
-                background: device.status === 'OK' ? '#eaf5ef' : device.status === 'WARNING' ? '#fff3d9' : '#fff0f1',
+                borderColor: device.status === 'OK' && !isDeviceStale ? '#247354' : device.status === 'WARNING' || (isDeviceStale && !isDeviceCritical) ? '#936511' : '#ad394b',
+                color: device.status === 'OK' && !isDeviceStale ? '#1b5e46' : device.status === 'WARNING' || (isDeviceStale && !isDeviceCritical) ? '#80520b' : '#a42c3d',
+                background: device.status === 'OK' && !isDeviceStale ? '#eaf5ef' : device.status === 'WARNING' || (isDeviceStale && !isDeviceCritical) ? '#fff3d9' : '#fff0f1',
               }}>
-                {device.status === 'OK' ? 'พร้อมใช้งาน' : device.status === 'STALE' ? 'ข้อมูลขาดช่วง' : 'ต้องตรวจ'}
+                {device.status === 'OK' && !isDeviceStale ? 'พร้อมใช้งาน' : device.status === 'STALE' || isDeviceStale ? 'ข้อมูลขาดช่วง' : 'ต้องตรวจ'}
               </span>
             </div>
 
@@ -202,16 +219,27 @@ export default function BedsidePanel({ patientId }: { patientId: string }) {
                   </span>
                 </div>
                 <dd style={{ fontSize: 13, margin: '4px 0 2px', color: device.sensor_attached ? '#1b5e46' : '#a42c3d' }}>
-                  {device.sensor_attached ? '✓ ติดแนบสนิท' : '⚠ เซนเซอร์หลุด'}
+                  {device.sensor_attached ? 'ติดแนบสนิท' : 'เซนเซอร์หลุด'}
                 </dd>
               </div>
 
-              <div className={s.deviceFactCard} data-state="good">
+              <div
+                className={s.deviceFactCard}
+                data-state={updateState}
+                style={updateState === 'warn' ? { background: '#fffaf0', borderColor: '#f1dfbc' } : undefined}
+              >
                 <div className={s.deviceFactHead}>
                   <dt>อัปเดตล่าสุด</dt>
-                  <span className={`${s.deviceFactBadge} ${s.badgeGood}`}>สด</span>
+                  <span className={`${s.deviceFactBadge} ${updateBadgeClass}`}>{updateBadgeText}</span>
                 </div>
-                <dd style={{ fontSize: 12, margin: '4px 0 2px', fontWeight: 600 }}>{time(device.last_seen)}</dd>
+                <dd style={{ fontSize: 12, margin: '4px 0 2px', fontWeight: 600 }}>
+                  {time(device.last_seen)}
+                  {isDeviceStale && (
+                    <small style={{ display: 'block', fontSize: 11, color: isDeviceCritical ? '#a42c3d' : '#85550a', marginTop: 2 }}>
+                      {formatStaleDuration(device.last_seen, nowSec)}
+                    </small>
+                  )}
+                </dd>
               </div>
             </dl>
 
@@ -219,13 +247,13 @@ export default function BedsidePanel({ patientId }: { patientId: string }) {
               <div className={s.deviceIssues}>
                 {device.issues.map(issue => (
                   <span key={issue} className={s.issuePill}>
-                    ⚠ {issueLabel[issue] ?? issue}
+                    {issueLabel[issue] ?? issue}
                   </span>
                 ))}
               </div>
             ) : (
               <small className={s.muted} style={{ display: 'block', fontSize: 11, marginTop: 4 }}>
-                ✓ ไม่พบ fault จาก telemetry ล่าสุด · {device.device_id}
+                ไม่พบ fault จาก telemetry ล่าสุด · {device.device_id}
               </small>
             )}
           </article>
@@ -277,7 +305,7 @@ export default function BedsidePanel({ patientId }: { patientId: string }) {
 
       <details className={s.learnMoreDrawer}>
         <summary className={s.learnMoreSummary}>
-          <span>🛏️ รายละเอียดโมเดลแผ่นวัดแรงกด 32×64 การประเมินแบบปกปิด (Blinded) และประวัติเฉลย (Learn More)</span>
+          <span>รายละเอียดโมเดลแผ่นวัดแรงกด 32×64 การประเมินแบบปกปิด (Blinded) และประวัติเฉลย (Learn More)</span>
           <span className={s.learnMoreBadge}>Ground Truth ({data.ground_truth.length})</span>
         </summary>
         <div className={s.learnMoreBody}>
@@ -285,7 +313,7 @@ export default function BedsidePanel({ patientId }: { patientId: string }) {
             <b>สถานะโมเดลข้างเตียง:</b> {data.posture_model.status} · รุ่น {data.posture_model.version} {data.posture_model.error ? `· (${data.posture_model.error})` : ''} · สกัด 128 Spatial Features จากตารางแรงกด 32×64
           </p>
           <p className={s.muted}>
-            <b>เหตุผลของการปกปิดผลลัพธ์ (Blinded Evaluation):</b> ระบบซ่อนคำทำนายของ AI จนกว่าพยาบาลจะบันทึกท่าจริงของผู้ป่วย เพื่อป้องกัน Confirmation Bias และเก็บข้อมูล Ground Truth คุณภาพสูงสำหรับตรวจสอบความแม่นยำภายหลัง
+            <b>เหตุผลของการปกปิดผลลัพธ์ (Blinded Evaluation):</b> ระบบซ่อนคำทำนายของ AI จนกว่าพยาบาลจะบันทึกท่าจริงของผู้ป่วย เพื่อป้องกัน Confirmation Bias และเก็บข้อมูล Ground Truth คุณภาพสูงสำหรับตรวจสอบสมรรถนะการจำแนกภายหลัง
           </p>
           {data.ground_truth.length > 0 ? (
             <>

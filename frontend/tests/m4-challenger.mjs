@@ -1,16 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { resolve, join } from 'node:path';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import vm from 'node:vm';
+import ts from 'typescript';
 
 // Load key component sources
-const staffDashboardPath = resolve('app/StaffDashboard.tsx');
-const patientPortalPath = resolve('app/PatientPortal.tsx');
-const careChatPath = resolve('app/CareChat.tsx');
-const careChatCssPath = resolve('app/CareChat.module.css');
-const agentAssistantPath = resolve('app/AgentAssistant.tsx');
-const agentCssPath = resolve('app/AgentAssistant.module.css');
-const patientPortalCssPath = resolve('app/PatientPortal.module.css');
+const staffDashboardPath = fileURLToPath(new URL('../app/StaffDashboard.tsx', import.meta.url));
+const patientPortalPath = fileURLToPath(new URL('../app/PatientPortal.tsx', import.meta.url));
+const careChatPath = fileURLToPath(new URL('../app/CareChat.tsx', import.meta.url));
+const careChatCssPath = fileURLToPath(new URL('../app/CareChat.module.css', import.meta.url));
+const agentAssistantPath = fileURLToPath(new URL('../app/AgentAssistant.tsx', import.meta.url));
+const agentCssPath = fileURLToPath(new URL('../app/AgentAssistant.module.css', import.meta.url));
+const patientPortalCssPath = fileURLToPath(new URL('../app/PatientPortal.module.css', import.meta.url));
 
 const staffDashboardSrc = readFileSync(staffDashboardPath, 'utf8');
 const patientPortalSrc = readFileSync(patientPortalPath, 'utf8');
@@ -148,7 +151,7 @@ test('CHALLENGER-5: R2 Audit - Complete absence of AskAgent across all frontend 
       }
     }
   }
-  scanDir(resolve('app'));
+  scanDir(fileURLToPath(new URL('../app', import.meta.url)));
 });
 
 test('CHALLENGER-6: R3 Audit - Staff and Patient Chat Navigation Separation', () => {
@@ -191,8 +194,24 @@ test('CHALLENGER-7: R4 Audit - Messenger Aesthetics and Strict Exclusion of Call
 });
 
 test('CHALLENGER-8: Zero console warnings/errors during simulated component imports', async () => {
-  // Verify modules import cleanly in node environment
-  const patientView = await import('../app/patientView.ts');
+  // Verify modules transpile and evaluate cleanly in node environment
+  function loadTsModule(relativePath) {
+    const source = readFileSync(new URL(relativePath, import.meta.url), 'utf8');
+    const modExports = {};
+    const localRequire = (id) => {
+      if (id === './careView' || id.endsWith('/careView')) {
+        return loadTsModule('../app/careView.ts');
+      }
+      throw new Error(`Unexpected require in test sandbox: ${id}`);
+    };
+    vm.runInNewContext(
+      ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText,
+      { exports: modExports, require: localRequire, Intl }
+    );
+    return modExports;
+  }
+
+  const patientView = loadTsModule('../app/patientView.ts');
   assert.ok(patientView.patientSections.some(s => s.key === 'chat'));
   assert.ok(patientView.patientSections.some(s => s.key === 'care'));
 });

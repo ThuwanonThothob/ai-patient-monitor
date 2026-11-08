@@ -20,7 +20,9 @@ router = APIRouter(prefix='/api/care', tags=['demo-care-plans'])
 
 
 def connect():
-    conn = sqlite3.connect(auth.DB, timeout=10)
+    conn = sqlite3.connect(auth.DB, timeout=15)
+    conn.execute("PRAGMA busy_timeout = 15000")
+    conn.execute("PRAGMA journal_mode = WAL")
     conn.row_factory = sqlite3.Row
     return conn
 

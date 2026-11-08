@@ -14,8 +14,9 @@ def main():
     if audience not in {'staff', 'patient'}:
         raise SystemExit('Expected staff or patient')
     root = Path(__file__).resolve().parents[1]
+    profile = os.getenv('WARD_DEPLOYMENT_PROFILE', 'private-test')
     verified = subprocess.run([sys.executable, str(root / 'scripts/deployment_preflight.py'),
-                               '--profile', 'private-test'], check=False)
+                               '--profile', profile], check=False)
     if verified.returncode:
         return verified.returncode
     app, port = ('main:app', '8000') if audience == 'staff' else ('patient_api:app', '8001')

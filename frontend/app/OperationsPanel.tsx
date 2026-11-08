@@ -9,6 +9,8 @@ type Status = {
   new_alerts: number;
   unclaimed_messages: number;
   chat_unread: number;
+  chat_enabled?: boolean;
+  role_type?: string;
   push_ready: boolean;
   named_login: boolean;
   secure_cookie: boolean;
@@ -42,8 +44,16 @@ export default function OperationsPanel({
   if (error) return <p role="alert" className={s.error}>อ่านสถานะการทำงานไม่สำเร็จ</p>;
   if (!data) return <p role="status">กำลังตรวจระบบ…</p>;
 
-  const checkedCount = handoffItems.filter((_, idx) => Boolean(handoffChecks[idx])).length;
-  const allChecked = checkedCount === handoffItems.length;
+  const chatAllowed = data.chat_enabled !== false && data.role_type !== 'central';
+  const activeHandoffItems = chatAllowed
+    ? handoffItems
+    : [
+        handoffItems[0],
+        "ตรวจสอบสถานะผู้ป่วยเฝ้าระวังและแพทย์เจ้าของไข้ประจำเตียงครบถ้วน",
+        handoffItems[2],
+      ];
+  const checkedCount = activeHandoffItems.filter((_, idx) => Boolean(handoffChecks[idx])).length;
+  const allChecked = checkedCount === activeHandoffItems.length;
 
   return (
     <section className={s.panel}>
@@ -53,34 +63,41 @@ export default function OperationsPanel({
           <h2 className={s.h2}>งานที่รอทีมดูแล</h2>
         </div>
         <span className={s.pill} style={{ borderColor: '#c9dfd3', background: '#f2f9f5', color: '#155d44' }}>
-          เตียงออนไลน์ {data.fresh_beds}/{data.total_beds} · เช็กลิสต์ส่งเวร {checkedCount}/{handoffItems.length}
+          เตียงออนไลน์ {data.fresh_beds}/{data.total_beds} · เช็กลิสต์ส่งเวร {checkedCount}/{activeHandoffItems.length}
         </span>
       </div>
 
       <div className={s.actions} style={{ margin: '10px 0 12px' }}>
-        <button className={s.critical} onClick={alerts}>🚨 เหตุการณ์รอรับผิดชอบ {data.new_alerts}</button>
-        <button className={s.secondary} onClick={messages}>⚠️ ข้อความแจ้งเรื่องใหม่ {data.unclaimed_messages}</button>
-        <button className={s.primary} onClick={chat ?? messages}>แชทแพทย์-ผู้ป่วยยังไม่อ่าน {data.chat_unread}</button>
+        <button className={s.critical} onClick={alerts}>เหตุการณ์รอรับผิดชอบ {data.new_alerts}</button>
+        {chatAllowed && <button className={s.secondary} onClick={messages}>ข้อความแจ้งเรื่องใหม่ {data.unclaimed_messages}</button>}
+        {chatAllowed && <button className={s.primary} onClick={chat ?? messages}>แชทแพทย์-ผู้ป่วยยังไม่อ่าน {data.chat_unread}</button>}
+        {!chatAllowed && (
+          <span className={s.pill} style={{ borderColor: '#cbd5e1', background: '#f8fafc', color: '#334155' }}>
+            โหมดศูนย์กลาง (Central Console) · ไม่มีระบบแชทและข้อความ
+          </span>
+        )}
       </div>
 
       <details className={s.learnMoreDrawer}>
         <summary className={s.learnMoreSummary}>
-          <span>📋 ข้อมูลส่งต่อเวร เช็กลิสต์ และสถานะความพร้อมระบบ (Learn More)</span>
+          <span>ข้อมูลส่งต่อเวร เช็กลิสต์ และสถานะความพร้อมระบบ (Learn More)</span>
           <span className={s.learnMoreBadge}>ดูรายละเอียด</span>
         </summary>
         <div className={s.learnMoreBody}>
           <p className={s.notice}>
-            คำแนะนำการส่งต่อเวรอย่างปลอดภัย (Shift Handoff Reminder): ตรวจสอบเหตุการณ์รอรับผิดชอบ ข้อความที่ยังไม่มีผู้รับ และยืนยันสถานะเซนเซอร์ข้างเตียงก่อนส่งมอบเวรทุกครั้ง
+            {chatAllowed
+              ? "คำแนะนำการส่งต่อเวรอย่างปลอดภัย (Shift Handoff Reminder): ตรวจสอบเหตุการณ์รอรับผิดชอบ ข้อความที่ยังไม่มีผู้รับ และยืนยันสถานะเซนเซอร์ข้างเตียงก่อนส่งมอบเวรทุกครั้ง"
+              : "คำแนะนำการส่งต่อเวรศูนย์กลาง (Central Shift Handoff): ตรวจสอบเหตุการณ์รอรับผิดชอบ รายชื่อแพทย์เจ้าของไข้ประจำเตียง และยืนยันสถานะเซนเซอร์ข้างเตียงก่อนส่งมอบเวรทุกครั้ง"}
           </p>
           <div className={s.handoffChecklistBox}>
             <div className={s.handoffHead}>
-              <h3 className={s.handoffTitle}>📋 เช็กลิสต์ส่งต่อเวร (Shift Handoff Checklist)</h3>
+              <h3 className={s.handoffTitle}>เช็กลิสต์ส่งต่อเวร (Shift Handoff Checklist)</h3>
               <span className={allChecked ? s.handoffProgressDone : s.handoffProgress}>
-                {allChecked ? "✅ ตรวจครบแล้ว 3/3 รายการ พร้อมส่งมอบเวร" : `ตรวจแล้ว ${checkedCount}/3 รายการ`}
+                {allChecked ? "ตรวจครบแล้ว 3/3 รายการ พร้อมส่งมอบเวร" : `ตรวจแล้ว ${checkedCount}/3 รายการ`}
               </span>
             </div>
             <ul className={s.handoffList}>
-              {handoffItems.map((text, idx) => (
+              {activeHandoffItems.map((text, idx) => (
                 <li key={idx} className={s.handoffItem}>
                   <label className={s.handoffLabel}>
                     <input
@@ -96,7 +113,7 @@ export default function OperationsPanel({
             </ul>
             <div className={s.handoffPrintBar}>
               <button type="button" className={s.printBtn} onClick={() => window.print()}>
-                🖨️ สั่งพิมพ์ใบสรุปส่งเวร
+                สั่งพิมพ์ใบสรุปส่งเวร
               </button>
               <small className={s.printTip}>โหมดพิมพ์จะจัดรูปแบบกระดาษสีขาวคมชัดและซ่อนปุ่มระบบอัตโนมัติ</small>
             </div>
@@ -106,19 +123,19 @@ export default function OperationsPanel({
             <summary>สถานะระบบและการตั้งค่าก่อนทดลองใช้</summary>
             <ul className={s.operationalList}>
               <li>
-                ตัวรับข้อมูล: {data.worker === 'RUNNING' ? '🟢 ทำงานอยู่' : '⚠️ ยังไม่พร้อม'} · มีข้อมูลเตียงใหม่ 🛏️ {data.fresh_beds}/{data.total_beds}
+                ตัวรับข้อมูล: {data.worker === 'RUNNING' ? 'ทำงานอยู่' : 'ยังไม่พร้อม'} · มีข้อมูลเตียงใหม่ {data.fresh_beds}/{data.total_beds}
               </li>
               <li>
-                บัญชีรายบุคคล: {data.named_login ? '🔒 ปิดการเข้าด้วย ID อย่างเดียวแล้ว' : '⚠️ ยังเปิดโหมดสาธิต'}
+                บัญชีรายบุคคล: {data.named_login ? 'ปิดการเข้าด้วย ID อย่างเดียวแล้ว' : 'ยังเปิดโหมดสาธิต'}
               </li>
               <li>
-                Cookie ผ่าน HTTPS: {data.secure_cookie ? '🔒 เปิด' : '⚠️ ยังปิด เหมาะกับการทดสอบในเครื่อง'}
+                Cookie ผ่าน HTTPS: {data.secure_cookie ? 'เปิด' : 'ยังปิด (เหมาะกับการทดสอบในเครื่อง)'}
               </li>
               <li>
-                Web Push: {data.push_ready ? '🔔 ตั้งค่าครบ ต้องทดสอบรับจริงบนโทรศัพท์' : '⚠️ ยังตั้งค่าไม่ครบ / ปิดอยู่'}
+                Web Push: {data.push_ready ? 'ตั้งค่าครบ ต้องทดสอบรับจริงบนโทรศัพท์' : 'ยังตั้งค่าไม่ครบ / ปิดอยู่'}
               </li>
               <li>
-                เซนเซอร์ข้างเตียง: {Object.entries(data.bedside?.devices ?? {}).map(([key, value]) => `📟 ${key} ${value}`).join(' · ') || '⚠️ ยังไม่มี heartbeat'} · โมเดลท่า {data.bedside?.posture_model ?? 'UNAVAILABLE'}
+                เซนเซอร์ข้างเตียง: {Object.entries(data.bedside?.devices ?? {}).map(([key, value]) => `${key}: ${value}`).join(' · ') || 'ยังไม่มี heartbeat'} · โมเดลท่า {data.bedside?.posture_model ?? 'UNAVAILABLE'}
               </li>
               <li>
                 Pressure map {data.bedside?.posture_observations ?? 0} ครั้ง · Ground Truth ที่ยืนยันแล้ว {data.bedside?.ground_truth_labels ?? 0} รายการ

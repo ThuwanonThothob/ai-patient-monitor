@@ -37,9 +37,10 @@ const QUICK_CLINICAL_NOTES = [
   'เฝ้าระวังอาการใกล้ชิดตามรอบเวร',
 ];
 
-export default function AlertWorkflow({ alerts, busy, openPatient, move }: {
+export default function AlertWorkflow({ alerts, busy, openPatient, move, now }: {
   alerts: AlertItem[]; busy: number | null; openPatient: (id: string) => void;
   move: (id: number, status: 'ACKNOWLEDGED' | 'ESCALATED' | 'RESOLVED', note?: string, version?: number) => void;
+  now?: number;
 }) {
   const [notes, setNotes] = useState<Record<number, string>>({});
 
@@ -59,6 +60,8 @@ export default function AlertWorkflow({ alerts, busy, openPatient, move }: {
       {alerts.map(a => {
         const isCritical = a.severity === 'critical';
         const pillTone = a.status === 'RESOLVED' ? s.resolve : isCritical ? s.critical : s.warning;
+        const currentSec = now ?? (a.last_seen_at ?? a.created_at);
+        const elapsedMinutes = currentSec && a.created_at ? Math.max(1, Math.floor((currentSec - a.created_at) / 60)) : 1;
         return (
           <article
             key={a.id}
@@ -70,6 +73,11 @@ export default function AlertWorkflow({ alerts, busy, openPatient, move }: {
                 {a.patient_id} · โซน {a.zone} · ห้อง {a.room_number}
               </button>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                {a.status === 'NEW' && (
+                  <span className={s.pill} style={{ borderColor: '#ad394b', color: '#8c1d2d', background: '#fff5f5', fontWeight: 700 }}>
+                    ยังไม่รับทราบ ({elapsedMinutes} นาที)
+                  </span>
+                )}
                 <span className={s.pill} style={{ borderColor: '#cbd9d2', color: '#2b4c3f', background: '#f7fbf9' }}>
                   ผู้รับผิดชอบ: {a.assigned_to ?? 'ยังไม่มีผู้รับผิดชอบ'}
                 </span>
@@ -106,7 +114,7 @@ export default function AlertWorkflow({ alerts, busy, openPatient, move }: {
 
             <details className={s.learnMoreDrawer}>
               <summary className={s.learnMoreSummary}>
-                <span>🕒 ประวัติเวลาเกิดเหตุการณ์และรายละเอียดการติดตาม (Learn More)</span>
+                <span>ประวัติเวลาเกิดเหตุการณ์และรายละเอียดการติดตาม (Learn More)</span>
                 <span className={s.learnMoreBadge}>ดูเวลา ({a.occurrences ?? 1} ครั้ง)</span>
               </summary>
               <div className={s.learnMoreBody}>

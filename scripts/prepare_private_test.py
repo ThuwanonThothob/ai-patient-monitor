@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -17,8 +18,12 @@ def configuration(host, contact):
         raise ValueError('ต้องใช้ DNS name ของ Mac จาก Tailscale เช่น my-mac.tail123.ts.net')
     if not re.fullmatch(r'[^\s\x00-\x1f@\x7f\"\x27]+@[^\s\x00-\x1f@\x7f\"\x27]+\.[a-zA-Z]{2,}', contact):
         raise ValueError('กรุณาใส่อีเมลติดต่อผู้ดูแลสำหรับ VAPID')
+    doctor_password = secrets.token_urlsafe(16)
+    patient_password = secrets.token_urlsafe(16)
     return {
         'WARD_DEMO_ID_LOGIN': '0', 'WARD_ENABLE_TEST_ACCOUNTS': '1',
+        'WARD_TEST_DOCTOR_PASSWORD': doctor_password,
+        'WARD_TEST_PATIENT_PASSWORD': patient_password,
         'WARD_COOKIE_SECURE': '1', 'WARD_INGEST_MODE': 'replay',
         'WARD_BEDSIDE_MQTT_ENABLED': '0', 'WARD_WEB_PUSH_ENABLED': '1',
         'WARD_DB_PATH': str(ROOT / 'backend/runtime/ward-private-test.db'),
@@ -59,6 +64,8 @@ def main():
     print('พร้อม: ' + str(path))
     print('บุคลากร: ' + values['WARD_STAFF_ORIGIN'])
     print('ผู้ป่วย: ' + values['WARD_PATIENT_ORIGIN'])
+    print(f'รหัสผ่านแพทย์ทดสอบ (ward-doctor-test): {values["WARD_TEST_DOCTOR_PASSWORD"]}')
+    print(f'รหัสผ่านผู้ป่วยทดสอบ (P-HOME-DEMO): {values["WARD_TEST_PATIENT_PASSWORD"]}')
     print('ขั้นต่อไป: ดู docs/PRIVATE_TEST.md — เปิด Serve เฉพาะ tailnet ห้ามใช้ Funnel')
 
 

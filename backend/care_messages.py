@@ -11,20 +11,22 @@ staff_router = APIRouter()
 patient_router = APIRouter()
 
 
+def connect():
+    conn = sqlite3.connect(auth.DB, timeout=15)
+    conn.execute("PRAGMA busy_timeout = 15000")
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
 def init():
-    with closing(sqlite3.connect(auth.DB, timeout=10)) as conn, conn:
+    with closing(connect()) as conn, conn:
         conn.execute('''CREATE TABLE IF NOT EXISTS care_messages (
             id INTEGER PRIMARY KEY, patient_id TEXT NOT NULL, request_key TEXT NOT NULL,
             topic TEXT NOT NULL, message TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'NEW',
             created_at REAL NOT NULL, updated_at REAL NOT NULL, assigned_to TEXT, reply TEXT NOT NULL DEFAULT '',
             UNIQUE(patient_id,request_key))''')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_care_messages_patient ON care_messages(patient_id,created_at)')
-
-
-def connect():
-    conn = sqlite3.connect(auth.DB, timeout=10)
-    conn.row_factory = sqlite3.Row
-    return conn
 
 
 class Message(BaseModel):
@@ -59,11 +61,18 @@ def send(body: Message, request: Request):
         if count >= 5:
             raise HTTPException(429, 'ส่งได้ไม่เกิน 5 รายการต่อชั่วโมง หากต้องการความช่วยเหลือทันทีให้ติดต่อทีมดูแลโดยตรง')
         cur = conn.execute('INSERT INTO care_messages(patient_id,request_key,topic,message,created_at,updated_at) VALUES (?,?,?,?,?,?)', (patient, body.request_key, body.topic, body.message.strip(), now, now))
-        return {'id': cur.lastrowid, 'stored': True}
+        msg_id = cur.lastrowid
+        conn.execute('''INSERT INTO agent_audit_logs(patient_id,action,actor,detail,created_at)
+            VALUES (?,?,?,?,?)''', (patient, 'CARE_MESSAGE_CREATED', patient, f'care message #{msg_id} topic={body.topic}', now))
+        return {'id': msg_id, 'stored': True}
 
 
 @staff_router.get('/api/care-messages')
 def list_messages(state: Literal['open', 'RESOLVED'] = 'open'):
+    actor = auth.request_staff_subject.get()
+    if actor and not auth.is_chat_enabled_for_staff(actor):
+        auth._log_security_audit(None, 'UNAUTHORIZED_CHAT_ACCESS', actor, 'Central role blocked from care-messages list')
+        raise HTTPException(403, 'บัญชีศูนย์กลาง (Central Console) ไม่มีระบบแชทและข้อความ')
     with closing(connect()) as conn:
         clause, values = auth.scoped_sql()
         rows = conn.execute("SELECT * FROM care_messages WHERE state " + ("!= 'RESOLVED'" if state == 'open' else "= 'RESOLVED'") + ' AND ' + clause + ' ORDER BY created_at LIMIT 100', values).fetchall()
@@ -77,6 +86,10 @@ class Update(BaseModel):
 
 @staff_router.patch('/api/care-messages/{message_id}')
 def update(message_id: int, body: Update, request: Request):
+    actor = getattr(getattr(request, 'state', None), 'subject', None) or auth.request_staff_subject.get()
+    if actor and not auth.is_chat_enabled_for_staff(actor):
+        auth._log_security_audit(None, 'UNAUTHORIZED_CHAT_ACCESS', actor, f'Central role blocked from updating care-message #{message_id}')
+        raise HTTPException(403, 'บัญชีศูนย์กลาง (Central Console) ไม่มีระบบแชทและข้อความ')
     with closing(connect()) as conn, conn:
         conn.execute('BEGIN IMMEDIATE')
         row = conn.execute('SELECT * FROM care_messages WHERE id=?', (message_id,)).fetchone()

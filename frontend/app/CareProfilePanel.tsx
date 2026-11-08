@@ -70,7 +70,7 @@ const statusLabels: Record<string, string> = {
   NO_REVIEWED_PROFILE: "ยังไม่มีโปรไฟล์ยืนยัน",
   NO_READING: "ยังไม่มีข้อมูลวัด",
   STALE_READING: "ค่าที่วัดเก่าแล้ว — งดเปรียบเทียบ",
-  READING_BEFORE_REVIEW: "รอค่าที่วัดหลังยืนยันโปรไฟล์",
+  READING_BEFORE_REVIEW: "รอค่าที่วัดหลังยืนยันโปรไฟล์ (อัปเดตอัตโนมัติใน 5 วินาที)",
   INVALID_READING: "ข้อมูลวัดไม่ผ่านคุณภาพ",
   UNKNOWN_SOURCE: "ไม่ทราบแหล่งการวัด",
   NOT_CONFIGURED: "ไม่ได้เปิดช่วงอ้างอิง",
@@ -86,41 +86,86 @@ const statusLabels: Record<string, string> = {
 export default function CareProfilePanel({ patientId }: { patientId: string }) {
   const [data, setData] = useState<Profile | null>(null);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+  const [autoApprove, setAutoApprove] = useState(true);
   const mounted = useRef(true);
+  const formRef = useRef<HTMLFormElement | null>(null);
 
-  const load = useCallback(async () => {
-    const r = await fetch(`/api/care/patients/${patientId}/profile`);
-    if (!r.ok) throw new Error("โหลดโปรไฟล์ไม่ได้ กรุณาลองใหม่");
-    const result = await r.json() as Profile;
-    if (mounted.current) {
-      setData(result);
-      setConfirmed(false);
-    }
-  }, [patientId]);
+  const load = useCallback(
+    async (resetConfirm = false) => {
+      const r = await fetch(`/api/care/patients/${encodeURIComponent(patientId)}/profile`);
+      if (!r.ok) throw new Error("โหลดโปรไฟล์ไม่ได้ กรุณาลองใหม่");
+      const result = (await r.json()) as Profile;
+      if (mounted.current) {
+        setData(result);
+        if (resetConfirm) setConfirmed(false);
+      }
+    },
+    [patientId]
+  );
 
   useEffect(() => {
     mounted.current = true;
-    void load().catch((e) => {
-      if (mounted.current) setError(e.message);
-    });
+    const first = setTimeout(() => {
+      void load(true).catch((e) => {
+        if (mounted.current) setError(e.message);
+      });
+    }, 0);
+    const timer = setInterval(() => {
+      void load(false).catch(() => {});
+    }, 5000);
     return () => {
       mounted.current = false;
+      clearTimeout(first);
+      clearInterval(timer);
     };
   }, [load]);
 
+  function fillRangePreset(hrLow: string, hrHigh: string, spo2Low: string, spo2High: string, rrLow: string, rrHigh: string) {
+    const form = formRef.current;
+    if (!form) return;
+    const set = (name: string, val: string) => {
+      const el = form.elements.namedItem(name) as HTMLInputElement | null;
+      if (el) el.value = val;
+    };
+    set("heart_rate_low", hrLow);
+    set("heart_rate_high", hrHigh);
+    set("spo2_low", spo2Low);
+    set("spo2_high", spo2High);
+    set("respiratory_rate_low", rrLow);
+    set("respiratory_rate_high", rrHigh);
+  }
+
+  function fillClinicalDemoContext() {
+    const form = formRef.current;
+    if (!form) return;
+    const set = (name: string, val: string) => {
+      const el = form.elements.namedItem(name) as HTMLInputElement | HTMLTextAreaElement | null;
+      if (el) el.value = val;
+    };
+    set("conditions", data?.registry_condition || "ติดตามอาการระบบทางเดินหายใจและหัวใจ (ข้อมูลสาธิต)");
+    set("medications", "รายการยาเดิมตามเวชระเบียนสาธิต (ใช้ทบทวนเท่านั้น ไม่ใช่ใบสั่งยา)");
+    set("allergies", "ปฏิเสธประวัติแพ้ยาในทะเบียนสาธิต");
+    set("limitations", "เฝ้าระวังการพลิกตัวทุก 2 ชม. และตรวจความกระชับของเซนเซอร์ปลายนิ้ว");
+    set("care_notes", "ติดตามค่า SpO2 และอัตราการหายใจหลังจัดท่านอนศีรษะสูง");
+    set("caregiver", "ทีมพยาบาลและแพทย์เจ้าของไข้");
+    fillRangePreset("60", "100", "94", "100", "12", "20");
+    setNotice("เติมข้อมูลตัวอย่างและขอบเขตมาตรฐานผู้ใหญ่เรียบร้อยแล้ว — กดปุ่มบันทึกด้านล่างได้เลย");
+  }
+
   async function mutate(path: string, method: string, body: unknown) {
-    if (busy) return;
+    if (busy) return false;
     setBusy(true);
     setError("");
     try {
-      const r = await fetch(`/api/care/patients/${patientId}/${path}`, {
+      const r = await fetch(`/api/care/patients/${encodeURIComponent(patientId)}/${path}`, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const result = await r.json();
+      const result = await r.json().catch(() => ({}));
       if (!r.ok) {
         throw new Error(
           typeof result.detail === "string"
@@ -128,17 +173,22 @@ export default function CareProfilePanel({ patientId }: { patientId: string }) {
             : "ข้อมูลโปรไฟล์ไม่ถูกต้อง กรุณาตรวจขอบเขตและความยาวข้อความ"
         );
       }
-      await load();
+      await load(true);
+      return true;
     } catch (e) {
       if (mounted.current) setError(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
+      return false;
     } finally {
       if (mounted.current) setBusy(false);
     }
   }
 
-  function save(event: FormEvent<HTMLFormElement>) {
+  async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (busy) return;
     const form = new FormData(event.currentTarget);
+    setError("");
+    setNotice("");
     try {
       const content = {
         conditions: form.get("conditions"),
@@ -151,9 +201,45 @@ export default function CareProfilePanel({ patientId }: { patientId: string }) {
         use_reference: form.get("use_reference") === "on",
         reference_minutes: Number(form.get("reference_minutes")),
       };
-      void mutate("profile", "POST", { expected_version: data?.version ?? 0, content });
+      const expectedVersion = data?.version ?? 0;
+      setBusy(true);
+      const draftRes = await fetch(`/api/care/patients/${encodeURIComponent(patientId)}/profile`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expected_version: expectedVersion, content }),
+      });
+      const draftJson = (await draftRes.json().catch(() => ({}))) as { version?: number; detail?: string };
+      if (!draftRes.ok) {
+        throw new Error(
+          typeof draftJson.detail === "string"
+            ? draftJson.detail
+            : "ข้อมูลโปรไฟล์ไม่ถูกต้อง กรุณาตรวจขอบเขตและความยาวข้อความ"
+        );
+      }
+      const nextVersion = draftJson.version ?? expectedVersion + 1;
+      if (autoApprove) {
+        const revRes = await fetch(`/api/care/patients/${encodeURIComponent(patientId)}/profile/review`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            expected_version: nextVersion,
+            action: "APPROVE",
+            confirmed: true,
+          }),
+        });
+        const revJson = (await revRes.json().catch(() => ({}))) as { detail?: string };
+        if (!revRes.ok) {
+          throw new Error(typeof revJson.detail === "string" ? revJson.detail : "บันทึกร่างสำเร็จแต่ยืนยันไม่สำเร็จ");
+        }
+        setNotice(`บันทึกและยืนยันโปรไฟล์ v${nextVersion} เรียบร้อยแล้ว`);
+      } else {
+        setNotice(`บันทึกร่างโปรไฟล์ v${nextVersion} แล้ว — กดยืนยันทางด้านขวาเพื่อเริ่มใช้เปรียบเทียบ`);
+      }
+      await load(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "ตรวจข้อมูลอีกครั้ง");
+      if (mounted.current) setError(e instanceof Error ? e.message : "ตรวจข้อมูลอีกครั้ง");
+    } finally {
+      if (mounted.current) setBusy(false);
     }
   }
 
@@ -169,10 +255,11 @@ export default function CareProfilePanel({ patientId }: { patientId: string }) {
             <h2>ข้อมูลการดูแล · {patientId}</h2>
           </div>
           <button
+            type="button"
             disabled={busy}
             onClick={() => {
               setError("");
-              void load().catch((e) => setError(e.message));
+              void load(false).catch((e) => setError(e.message));
             }}
           >
             โหลดโปรไฟล์ล่าสุด
@@ -184,16 +271,24 @@ export default function CareProfilePanel({ patientId }: { patientId: string }) {
             <article style={{ padding: "12px 16px", background: data.active ? "#f2f9f5" : "#f8faf8", borderColor: data.active ? "#b7dcd0" : "#dfe7df" }}>
               <span>สถานะฉบับที่ยืนยันแล้ว (Active)</span>
               <strong style={{ fontSize: 18, margin: "4px 0" }}>
-                {data.active ? `🟢 v${data.active.version} · ยืนยันแล้ว` : "⚪ ยังไม่มีฉบับที่ยืนยันแล้ว"}
+                {data.active ? `v${data.active.version} · ยืนยันแล้ว` : "ยังไม่มีฉบับที่ยืนยันแล้ว"}
               </strong>
-              <small>{data.active ? `ยืนยันโดย ${data.active.reviewed_by} · ${careTime(data.active.reviewed_at!)}` : "ต้องสร้างร่างและกดยืนยันก่อนเริ่มเปรียบเทียบ"}</small>
+              <small>
+                {data.active
+                  ? `ยืนยันโดย ${data.active.reviewed_by} · ${careTime(data.active.reviewed_at!)}`
+                  : "ต้องสร้างร่างและกดยืนยันก่อนเริ่มเปรียบเทียบ"}
+              </small>
             </article>
             <article style={{ padding: "12px 16px", background: hasDraft ? "#fff9eb" : "#f8faf8", borderColor: hasDraft ? "#e8d4ad" : "#dfe7df" }}>
               <span>สถานะฉบับร่าง (Draft)</span>
               <strong style={{ fontSize: 18, margin: "4px 0", color: hasDraft ? "#76561f" : "#20392e" }}>
-                {hasDraft ? `📝 ร่าง v${data.latest!.version} รอยืนยัน` : "✔️ ไม่มีฉบับร่างค้างตรวจ"}
+                {hasDraft ? `ร่าง v${data.latest!.version} รอยืนยัน` : "ไม่มีฉบับร่างค้างตรวจ"}
               </strong>
-              <small>{hasDraft ? `บันทึกโดย ${data.latest!.saved_by} · ${careTime(data.latest!.saved_at)}` : "ข้อมูลล่าสุดตรงกับฉบับที่ตรวจสอบแล้ว"}</small>
+              <small>
+                {hasDraft
+                  ? `บันทึกโดย ${data.latest!.saved_by} · ${careTime(data.latest!.saved_at)}`
+                  : "ข้อมูลล่าสุดตรงกับฉบับที่ตรวจสอบแล้ว"}
+              </small>
             </article>
             <article style={{ padding: "12px 16px" }}>
               <span>สถานะการเปรียบเทียบรายบุคคล</span>
@@ -220,7 +315,16 @@ export default function CareProfilePanel({ patientId }: { patientId: string }) {
           </div>
         </details>
 
-        {error && <p role="alert" className={s.warning} style={{ marginTop: 12, marginBottom: 0 }}>{error}</p>}
+        {notice && (
+          <p role="status" style={{ marginTop: 12, marginBottom: 0, padding: "10px 14px", borderRadius: 8, background: "#eaf5f0", color: "#134e3a", fontWeight: 600 }}>
+            {notice}
+          </p>
+        )}
+        {error && (
+          <p role="alert" className={s.warning} style={{ marginTop: 12, marginBottom: 0 }}>
+            {error}
+          </p>
+        )}
       </section>
 
       {!data ? (
@@ -232,7 +336,48 @@ export default function CareProfilePanel({ patientId }: { patientId: string }) {
             <p className={s.muted}>
               โรคในทะเบียนสังเคราะห์: <b>{data.registry_condition}</b> — ไม่ถูกนำมาเติมเป็นประวัติที่ยืนยันแล้วโดยอัตโนมัติ
             </p>
-            <form key={`${patientId}-${data.version}`} onSubmit={save}>
+
+            <div
+              style={{
+                padding: "14px 16px",
+                background: "#f4faf7",
+                border: "1px solid #cce0d3",
+                borderRadius: 12,
+                marginBottom: 16,
+              }}
+            >
+              <span style={{ display: "block", fontWeight: 700, color: "#0e6b52", marginBottom: 8, fontSize: 13 }}>
+                ตัวช่วยเติมข้อมูลและขอบเขตด่วน:
+              </span>
+              <div className={s.actions} style={{ margin: 0, gap: 8 }}>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={fillClinicalDemoContext}
+                  style={{ fontSize: 12.5, padding: "8px 12px", minHeight: 38, borderRadius: 8, fontWeight: 600 }}
+                >
+                  เติมข้อมูลคลินิกสาธิต + ขอบเขตมาตรฐาน
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => fillRangePreset("60", "100", "94", "100", "12", "20")}
+                  style={{ fontSize: 12.5, padding: "8px 12px", minHeight: 38, borderRadius: 8, fontWeight: 600 }}
+                >
+                  ขอบเขตผู้ใหญ่มาตรฐาน (HR 60–100, SpO₂ 94–100, RR 12–20)
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => fillRangePreset("", "", "", "", "", "")}
+                  style={{ fontSize: 12.5, padding: "8px 12px", minHeight: 38, borderRadius: 8, fontWeight: 600 }}
+                >
+                  ล้างค่าขอบเขต
+                </button>
+              </div>
+            </div>
+
+            <form ref={formRef} key={`${patientId}-${data.version}`} onSubmit={save}>
               <fieldset className={s.fieldset} style={{ marginTop: 10 }}>
                 <legend>1. ข้อมูลคลินิกและข้อควรระวัง</legend>
                 {([
@@ -319,17 +464,35 @@ export default function CareProfilePanel({ patientId }: { patientId: string }) {
                 </div>
               </fieldset>
 
+              <label
+                className={s.check}
+                style={{
+                  marginBottom: 10,
+                  padding: "10px 12px",
+                  background: autoApprove ? "#eef8f3" : "#f8faf8",
+                  borderRadius: 8,
+                  border: `1px solid ${autoApprove ? "#9fd4be" : "#dfe7df"}`,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={autoApprove}
+                  onChange={(e) => setAutoApprove(e.target.checked)}
+                />{" "}
+                ยืนยันการตรวจข้อมูลสาธิตและเปิดใช้โปรไฟล์ฉบับนี้ทันทีหลังบันทึก
+              </label>
+
               <button
                 type="submit"
                 disabled={busy}
                 style={{ width: "100%", fontWeight: 700, background: "#176e53", color: "#fff", borderColor: "#176e53" }}
               >
-                บันทึกร่างโปรไฟล์
+                {autoApprove ? "บันทึกและยืนยันโปรไฟล์ทันที" : "บันทึกร่างโปรไฟล์"}
               </button>
 
               <details className={s.learnMoreDrawer}>
                 <summary className={s.learnMoreSummary}>
-                  <span>📐 เงื่อนไขการคำนวณช่วงอ้างอิง 60 Snapshot และการแสดงผลฝั่งผู้ป่วย (Learn More)</span>
+                  <span>เงื่อนไขการคำนวณช่วงอ้างอิง 60 Snapshot และการแสดงผลฝั่งผู้ป่วย (Learn More)</span>
                   <span className={s.learnMoreBadge}>ดูเงื่อนไข</span>
                 </summary>
                 <div className={s.learnMoreBody}>
@@ -360,7 +523,7 @@ export default function CareProfilePanel({ patientId }: { patientId: string }) {
                 {data.active ? (
                   <>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
-                      <b>🟢 ฉบับที่ยืนยันแล้ว: v{data.active.version}</b>
+                      <b>ฉบับที่ยืนยันแล้ว: v{data.active.version}</b>
                       <small className={s.muted}>
                         ยืนยันโดย {data.active.reviewed_by} · {careTime(data.active.reviewed_at!)}
                       </small>
@@ -395,11 +558,19 @@ export default function CareProfilePanel({ patientId }: { patientId: string }) {
 
               {hasDraft && (
                 <p className={s.warning}>
-                  📝 มีร่าง v{data.latest!.version} รอยืนยัน ฉบับเดิมยังคงใช้จนกว่าจะยืนยันฉบับใหม่หรือพักการใช้
+                  มีร่าง v{data.latest!.version} รอยืนยัน ฉบับเดิมยังคงใช้จนกว่าจะยืนยันฉบับใหม่หรือพักการใช้
                 </p>
               )}
 
-              <label className={s.check} style={{ padding: "10px 12px", background: "#f8faf8", borderRadius: 8, border: "1px solid #dfe7df" }}>
+              <label
+                className={s.check}
+                style={{
+                  padding: "10px 12px",
+                  background: hasDraft && !confirmed ? "#fff9eb" : "#f8faf8",
+                  borderRadius: 8,
+                  border: `1px solid ${hasDraft && !confirmed ? "#e8d4ad" : "#dfe7df"}`,
+                }}
+              >
                 <input
                   type="checkbox"
                   checked={confirmed}
@@ -411,12 +582,20 @@ export default function CareProfilePanel({ patientId }: { patientId: string }) {
               <div className={s.actions}>
                 {hasDraft && (
                   <button
+                    type="button"
                     disabled={busy || !confirmed}
+                    style={
+                      confirmed
+                        ? { background: "#176e53", color: "#fff", borderColor: "#176e53", fontWeight: 700 }
+                        : undefined
+                    }
                     onClick={() =>
                       void mutate("profile/review", "PATCH", {
                         expected_version: data.version,
                         action: "APPROVE",
                         confirmed,
+                      }).then((ok) => {
+                        if (ok) setNotice(`ยืนยันโปรไฟล์ v${data.version} เรียบร้อยแล้ว`);
                       })
                     }
                   >
@@ -425,17 +604,25 @@ export default function CareProfilePanel({ patientId }: { patientId: string }) {
                 )}
                 {data.active && (
                   <button
+                    type="button"
                     disabled={busy || !confirmed}
                     onClick={() =>
                       void mutate("profile/review", "PATCH", {
                         expected_version: data.version,
                         action: "PAUSE",
                         confirmed,
+                      }).then((ok) => {
+                        if (ok) setNotice("พักการเปรียบเทียบรายคนแล้ว");
                       })
                     }
                   >
                     พักการเปรียบเทียบรายคน
                   </button>
+                )}
+                {(hasDraft || data.active) && !confirmed && (
+                  <small style={{ color: "#936511", alignSelf: "center" }}>
+                    ← ติ๊กช่องยืนยันด้านบนเพื่อเปิดปุ่มดำเนินการ
+                  </small>
                 )}
               </div>
             </section>
@@ -448,14 +635,18 @@ export default function CareProfilePanel({ patientId }: { patientId: string }) {
             <section className={s.card}>
               <details className={s.learnMoreDrawer} style={{ margin: 0 }}>
                 <summary className={s.learnMoreSummary}>
-                  <span>🗂️ ประวัติโปรไฟล์ (ล่าสุด 20 ฉบับ · Learn More)</span>
+                  <span>ประวัติโปรไฟล์ (ล่าสุด 20 ฉบับ · Learn More)</span>
                   <span className={s.learnMoreBadge}>ดู {data.history.length} ฉบับ</span>
                 </summary>
                 <div className={s.learnMoreBody}>
                   {data.history.map((v) => (
                     <p key={v.version} style={{ paddingBottom: 8, borderBottom: "1px solid #dfe7df" }}>
-                      <b>v{v.version} · {stateLabels[v.state] ?? v.state}</b>
-                      <small>{careTime(v.saved_at)} · {v.saved_by}</small>
+                      <b>
+                        v{v.version} · {stateLabels[v.state] ?? v.state}
+                      </b>
+                      <small>
+                        {careTime(v.saved_at)} · {v.saved_by}
+                      </small>
                       {v.content.conditions || "ไม่ได้ระบุโรค/ภาวะ"}
                     </p>
                   ))}
@@ -480,7 +671,7 @@ function ProfileComparison({ patientId }: { patientId: string }) {
     async function load() {
       const id = ++revision;
       try {
-        const r = await fetch(`/api/care/patients/${patientId}/profile`, { signal: abort.signal });
+        const r = await fetch(`/api/care/patients/${encodeURIComponent(patientId)}/profile`, { signal: abort.signal });
         if (!r.ok) throw new Error();
         const value = await r.json();
         if (id === revision) {
@@ -515,14 +706,18 @@ function ProfileComparison({ patientId }: { patientId: string }) {
       {c && (
         <>
           <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
-            <span><b>โปรไฟล์ v{c.profile_version ?? "—"}:</b> {statusLabels[c.status] ?? c.status}</span>
+            <span>
+              <b>โปรไฟล์ v{c.profile_version ?? "—"}:</b> {statusLabels[c.status] ?? c.status}
+            </span>
             <span className={s.muted}>ช่วงอ้างอิง: {statusLabels[c.reference_status] ?? c.reference_status}</span>
           </div>
           <label>
             ตัวแปร
             <select value={key} onChange={(e) => setKey(e.target.value as CareVital)}>
               {careVitals.map((k) => (
-                <option key={k} value={k}>{careVitalLabels[k]}</option>
+                <option key={k} value={k}>
+                  {careVitalLabels[k]}
+                </option>
               ))}
             </select>
           </label>

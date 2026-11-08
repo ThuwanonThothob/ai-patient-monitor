@@ -23,6 +23,9 @@ class Question(BaseModel):
 @router.post('/api/assistant/ask')
 def ask(body: Question, request: Request):
     audience, subject = request.state.audience, request.state.subject
+    if audience == 'staff' and not auth.is_chat_enabled_for_staff(subject):
+        auth._log_security_audit((body.patient_id or '').strip().upper() or None, 'UNAUTHORIZED_CHAT_ACCESS', subject, 'Central role blocked from assistant chat endpoint')
+        raise HTTPException(403, 'บัญชีศูนย์กลาง (Central Console) ไม่มีระบบแชท')
     patient_id = subject if audience == 'patient' else (body.patient_id or '').strip().upper()
     if audience == 'patient' and body.patient_id and body.patient_id.upper() != subject:
         raise HTTPException(403, 'เรียกดูได้เฉพาะข้อมูลของคุณ')
@@ -52,7 +55,7 @@ def ask(body: Question, request: Request):
             parts.append('ยังไม่มีผลโมเดลที่ใหม่และพร้อมใช้ จึงงดสรุปผล AI')
     else:
         parts.append('ข้อมูลการวัดยังไม่พร้อมหรือเก่าแล้ว งดใช้ค่านี้ประเมินสถานะปัจจุบัน')
-    if body.section in {'trends', 'evidence', 'reports'} or any(word in question for word in ('กราฟ', 'แนวโน้ม', 'ย้อนหลัง', 'trend', 'สรุป')):
+    if body.section in {'trends', 'evidence', 'reports', 'care_hub'} or any(word in question for word in ('กราฟ', 'แนวโน้ม', 'ย้อนหลัง', 'trend', 'สรุป')):
         trend = patient_views.trends(patient_id, 24)
         steps.append('อ่านสถิติย้อนหลัง 24 ชั่วโมง แยกตามแหล่งข้อมูล')
         for source, group in trend['sources'].items():
@@ -62,7 +65,7 @@ def ask(body: Question, request: Request):
                     ('heart_rate', 'HR', 'bpm'), ('spo2', 'SpO₂', '%'), ('respiratory_rate', 'RR', 'ครั้ง/นาที')) if stats.get(key)))
         if not trend['sources']:
             parts.append('ยังไม่มีข้อมูลย้อนหลัง 24 ชั่วโมง ไม่เติมค่าที่หายไป')
-    if body.section == 'care' or any(word in question for word in ('ดูแล', 'งาน', 'แผน', 'care', 'สรุป')):
+    if body.section in {'care', 'care_hub'} or any(word in question for word in ('ดูแล', 'งาน', 'แผน', 'care', 'สรุป')):
         care = patient_views.care(patient_id)
         steps.append('อ่านเฉพาะงานดูแลที่บุคลากรตรวจทานแล้ว')
         parts.append(f'งานดูแลที่เปิดอยู่ {care["open_count"]} งาน · บันทึกเสร็จวันนี้ {care["done_today"]} งาน')

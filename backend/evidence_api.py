@@ -45,7 +45,9 @@ def replay(rows, record_id, anchor, observed_until):
         'anchor_second': float(rows[anchor, 0]), 'target_second': float(rows[anchor, 0] + HORIZON),
         'analysis': analysis, 'input': [point(row) for row in history],
         'observed_after': [point(row) for row in rows[anchor + 1:observed_until + 1]],
-        'baseline': point(rows[anchor]), 'comparison': None, 'feature_evidence': [],
+        'baseline': point(rows[anchor]),
+        'moving_average_baseline': dict(zip(KEYS, np.round(history[:, 1:].mean(axis=0), 2).tolist())),
+        'comparison': None, 'feature_evidence': [],
         'evaluation_status': 'WAITING_FOR_TARGET', 'research_only': True,
         'notice': 'ข้อมูลย้อนหลัง ไม่ใช่ผู้ป่วยในทะเบียน ไม่สร้าง alert หรือส่ง Push; anomaly ไม่มี label โรค',
     }
@@ -63,11 +65,14 @@ def replay(rows, record_id, anchor, observed_until):
             result['evaluation_status'] = 'TARGET_WINDOW_INVALID'
         else:
             result['evaluation_status'] = 'EVALUATED'
+            ma_vals = dict(zip(KEYS, history[:, 1:].mean(axis=0).tolist()))
             result['comparison'] = {key: {
                 'actual': float(rows[target, index + 1]), 'selected': analysis['forecast'][key],
                 'baseline': float(rows[anchor, index + 1]),
+                'moving_average_baseline': round(float(ma_vals[key]), 2),
                 'selected_absolute_error': abs(analysis['forecast'][key] - float(rows[target, index + 1])),
                 'baseline_absolute_error': abs(float(rows[anchor, index + 1] - rows[target, index + 1])),
+                'moving_average_absolute_error': abs(float(ma_vals[key] - rows[target, index + 1])),
             } for index, key in enumerate(KEYS)}
     return result
 

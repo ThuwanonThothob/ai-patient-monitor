@@ -49,7 +49,7 @@ export default function StaffTrendPanel({ patientId }: { patientId: string }) {
       <VitalCharts points={group.points} title={`${sourceNames[source] ?? source} · ย้อนหลัง ${hours === 168 ? '7 วัน' : `${hours} ชั่วโมง`}`} description={`บันทึก ${group.snapshot_count} จุด · ค่าในกราฟเป็นค่าเฉลี่ยตามช่วงเวลา`} />
       <details className={styles.learnMoreDrawer}>
         <summary className={styles.learnMoreSummary}>
-          <span>📊 ตารางสรุปค่าสถิติย้อนหลังรายตัวแปรและข้อจำกัดของข้อมูล (Learn More)</span>
+          <span>ตารางสรุปค่าสถิติย้อนหลังรายตัวแปรและข้อจำกัดของข้อมูล (Learn More)</span>
           <span className={styles.learnMoreBadge}>สถิติเชิงลึก</span>
         </summary>
         <div className={styles.learnMoreBody}>

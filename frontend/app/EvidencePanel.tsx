@@ -50,7 +50,7 @@ function VitalsEvidence() {
       <h2>พิสูจน์ AI: พยากรณ์ล่วงหน้าก่อนรู้คำตอบจริง (Evidence Replay)</h2>
       <details className={s.learnMoreDrawer}>
         <summary className={s.learnMoreSummary}>
-          <span>📖 ข้อมูลระเบียบวิธีวิจัยและหลักฐานความโปร่งใส (Learn More)</span>
+          <span>ข้อมูลระเบียบวิธีวิจัยและหลักฐานความโปร่งใส (Learn More)</span>
           <span className={s.learnMoreBadge}>รายละเอียดระเบียบวิธี</span>
         </summary>
         <div className={s.learnMoreBody}>
@@ -100,7 +100,7 @@ function VitalsEvidence() {
         <p>Isolation Forest: {visible.analysis.status !== "READY" ? "ยังประเมินไม่ได้" : visible.analysis.is_anomaly ? "พบรูปแบบต่างจากชุดฝึก" : "ยังไม่พบรูปแบบต่างจากชุดฝึก"} · score {metric(visible.analysis.anomaly_score, 4)} ไม่ใช่โอกาสเกิดโรค</p>
         <details className={s.learnMoreDrawer}>
           <summary className={s.learnMoreSummary}>
-            <span>🔍 ดู input features 21 มิติ และแหล่งโมเดล (Learn More)</span>
+            <span>ดู input features 21 มิติ และแหล่งโมเดล (Learn More)</span>
             <span className={s.learnMoreBadge}>Features &amp; SHA-256</span>
           </summary>
           <div className={s.learnMoreBody}>
@@ -115,11 +115,16 @@ function VitalsEvidence() {
     {status && <section className={s.card}>
       <h3>ดูทั้งชุดทดสอบ ไม่ใช่เพียงเคสเดียว (Held-out Test Evaluation)</h3>
       <p>{status.metadata.test_windows} หน้าต่างจาก {status.records.length} ไฟล์ทดสอบ · วัดผลด้วย MAE (Mean Absolute Error) ยิ่งต่ำยิ่งดี · หน้าต่างสไลด์มีช่วงซ้อนทับกัน (Overlapping Windows)</p>
-      <div className={s.scroll}><table><thead><tr><th>ตัวแปร</th><th>วิธีที่เลือกจาก validation</th><th>Test MAE</th><th>Baseline MAE</th></tr></thead><tbody>{vitalKeys.map((key) => <tr key={key}><td>{names[key]}</td><td>{status.metadata.selected_forecast[key]}</td><td>{metric(status.metadata.test_selected_mae[key], 4)}</td><td>{metric(status.metadata.test_persistence_mae[key], 4)}</td></tr>)}</tbody></table></div>
-      <p className={s.warning}><b>หลักฐานความโปร่งใส:</b> โมเดล Random Forest ไม่จำเป็นต้องชนะ baseline ทุกตัว (เช่น SpO₂ ที่มีช่วงแกว่งสั้นๆ น้อย ค่าคงเดิมจึงแม่นยำมาก) ผลปัจจุบันยังไม่ใช่หลักฐานว่าใช้กับผู้สูงอายุที่บ้านได้แม่นยำ</p>
+      <div className={s.scroll}><table><thead><tr><th>ตัวแปร</th><th>วิธีที่เลือกจาก validation</th><th>Test MAE</th><th>Baseline MAE</th><th>MA (60s) MAE</th></tr></thead><tbody>{vitalKeys.map((key) => <tr key={key}><td>{names[key]}</td><td>{status.metadata.selected_forecast[key]}</td><td>{metric(status.metadata.test_selected_mae[key], 4)}</td><td>{metric(status.metadata.test_persistence_mae[key], 4)}</td><td>{metric((status.metadata as unknown as { test_moving_average_mae?: Record<string, number> }).test_moving_average_mae?.[key], 4)}</td></tr>)}</tbody></table></div>
+      {(status.metadata as unknown as { test_alert_burden?: { anomaly_episodes_per_patient_hour: number; anomaly_window_rate: number } }).test_alert_burden && (
+        <p className={s.muted} style={{ fontSize: "0.85rem", marginTop: "8px" }}>
+          <b>ภาระการแจ้งเตือน (Alert Burden):</b> {(status.metadata as unknown as { test_alert_burden: { anomaly_episodes_per_patient_hour: number; anomaly_window_rate: number } }).test_alert_burden.anomaly_episodes_per_patient_hour} ครั้ง/ชั่วโมงผู้ป่วย ({(status.metadata as unknown as { test_alert_burden: { anomaly_window_rate: number } }).test_alert_burden.anomaly_window_rate * 100}% ของหน้าต่างทดสอบ)
+        </p>
+      )}
+      <p className={s.warning}><b>หลักฐานความโปร่งใส:</b> โมเดล Random Forest ไม่จำเป็นต้องชนะ baseline ทุกตัว (เช่น SpO₂ ที่มีช่วงแกว่งสั้นๆ น้อย ค่าคงเดิมจึงมีความคลาดเคลื่อนต่ำสุด) ผลปัจจุบันยังไม่ใช่หลักฐานว่าใช้กับผู้สูงอายุที่บ้านได้โดยไม่ต้องมีแพทย์กำกับ</p>
       <details className={s.learnMoreDrawer}>
         <summary className={s.learnMoreSummary}>
-          <span>🗂️ การแบ่งกลุ่ม Train / Validation / Test (ปราศจาก Data Leakage · Learn More)</span>
+          <span>การแบ่งกลุ่ม Train / Validation / Test (ปราศจาก Data Leakage · Learn More)</span>
           <span className={s.learnMoreBadge}>Disjoint Splits</span>
         </summary>
         <div className={s.learnMoreBody}>

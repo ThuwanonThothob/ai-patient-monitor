@@ -22,11 +22,12 @@ function computeMean(points: VitalPoint[], key: VitalKey): number | null {
   return Number((sum / valid.length).toFixed(1));
 }
 
-export default function VitalCharts({ points, compact = false, title = 'แนวโน้มสัญญาณชีพล่าสุด', description }: {
+export default function VitalCharts({ points, compact = false, title = 'แนวโน้มสัญญาณชีพล่าสุด', description, stale = false }: {
   points?: VitalPoint[];
   compact?: boolean;
   title?: string;
   description?: string;
+  stale?: boolean;
 }) {
   const chartId = useId().replace(/:/g, '');
   const [table, setTable] = useState(false);
@@ -40,6 +41,8 @@ export default function VitalCharts({ points, compact = false, title = 'แน�
     chartIndex: index,
     chartPosition: timed ? point.timestamp : index,
   }));
+  const latestPoint = safe.length ? safe[safe.length - 1] : undefined;
+  const isLatestStale = Boolean(stale || !latestPoint);
   if (!safe.some((point) => vitalKeys.some((key) => point[key] !== null))) {
     return compact ? <div className="vital-chart-empty">ยังไม่มีข้อมูลแนวโน้ม</div> : <section className="vital-chart-section"><div className="vital-chart-heading"><div><h3>{title}</h3>{description && <p>{description}</p>}</div></div><div className="vital-chart-empty">ยังไม่มีค่าที่ผ่านการตรวจคุณภาพสำหรับสร้างกราฟ</div></section>;
   }
@@ -48,6 +51,7 @@ export default function VitalCharts({ points, compact = false, title = 'แน�
     <div className="vital-chart-grid">
       {vitalKeys.map((key) => {
         const meta = vitalMeta[key], summary = vitalSummary(safe, key), mean = computeMean(safe, key);
+        const isStaleOrEmpty = isLatestStale || summary.latest === null;
         const domain: [number, number] = summary.min === null || summary.max === null ? [0, 1]
           : key === 'spo2' ? [Math.max(0, summary.min - 2), 100]
             : [Math.max(0, Math.floor(summary.min - 2)), Math.ceil(summary.max + 2)];
@@ -58,7 +62,12 @@ export default function VitalCharts({ points, compact = false, title = 'แน�
               <b>{meta.label}</b>
               {!compact && <small style={{ fontSize: 10.5, color: '#5c7268' }}>{normalRangeHint[key]}</small>}
             </div>
-            <strong><span className="chart-latest-label">ล่าสุดที่มีค่า</span>{valueLabel(summary.latest)} <small>{meta.unit}</small></strong>
+            <strong className="chart-latest" style={isStaleOrEmpty ? { opacity: 0.65 } : undefined}>
+              <span className="chart-latest-label">
+                {isStaleOrEmpty ? 'ข้อมูลขาดช่วง · ค่าประวัติเดิม' : 'ล่าสุดที่มีค่า'}
+              </span>
+              {valueLabel(summary.latest)} <small>{meta.unit}</small>
+            </strong>
           </header>
           {!compact && <div className="vital-range"><span>ต่ำสุด <b>{valueLabel(summary.min)}</b></span><span>เฉลี่ย <b>{valueLabel(mean)}</b></span><span>สูงสุด <b>{valueLabel(summary.max)}</b></span><span>{summary.count} จุด</span></div>}
           <div className="vital-chart-canvas">
@@ -80,7 +89,7 @@ export default function VitalCharts({ points, compact = false, title = 'แน�
     {!compact && (
       <details className={s.learnMoreDrawer}>
         <summary className={s.learnMoreSummary}>
-          <span>📈 หลักการแสดงผลกราฟแนวโน้มและความปลอดภัยของข้อมูล (Learn More)</span>
+          <span>หลักการแสดงผลกราฟแนวโน้มและความปลอดภัยของข้อมูล (Learn More)</span>
           <span className={s.learnMoreBadge}>วิธีอ่านกราฟ</span>
         </summary>
         <div className={s.learnMoreBody}>

@@ -42,3 +42,8 @@ jobs:
       - name: Run Unified Test Runner
         run: |
           npm run test:all
+
+      - name: Verify Staff & Patient Production Builds
+        run: |
+          npm --prefix frontend run build
+          npm --prefix frontend run build:patient

@@ -10,15 +10,36 @@ export type MonitorData = {
   patient_id: string; status: string; timestamp?: number; source?: string; source_record?: string; simulation_state?: string;
   heart_rate?: number; spo2?: number; respiratory_rate?: number;
   history?: { timestamp?: number; time?: string; heart_rate?: number | null; spo2?: number | null; respiratory_rate?: number | null }[];
-  analysis: { status: string; history_points?: number; summary?: string; evaluated_at?: number; prediction_at?: number;
+  analysis: { status: string; abstain?: boolean; history_points?: number; summary?: string; evaluated_at?: number; prediction_at?: number;
     forecast?: { heart_rate: number; spo2: number; respiratory_rate: number } | null;
     forecast_methods?: Record<string, string>; is_anomaly?: boolean };
 };
-type Worker = { status: string; fresh_beds: number; total_beds?: number; ingest_mode: string; error?: string; model: {
+type Worker = { status: string; timestamp?: number; fresh_beds: number; total_beds?: number; ingest_mode: string; error?: string; model: {
   recordings?: number; usable_windows?: number; test_windows?: number;
   test_selected_mae?: Record<string, number>; test_persistence_mae?: Record<string, number>;
   selected_forecast?: Record<string, string>;
 } };
+
+export function formatStaleDuration(timestamp?: number | null, clock = Date.now() / 1000): string {
+  if (!timestamp || !Number.isFinite(timestamp)) {
+    return "ยังไม่มีสัญญาณจากหัววัด (รอข้อมูล)";
+  }
+  const effectiveClock = Number.isFinite(clock) && clock > 0 ? clock : Date.now() / 1000;
+  const elapsedSec = Math.max(0, Math.floor(effectiveClock - timestamp));
+  if (elapsedSec < 120) {
+    return `ขาดสัญญาณมานาน ${elapsedSec} วินาที`;
+  }
+  return `ขาดสัญญาณมานาน ${Math.floor(elapsedSec / 60)} นาที ${elapsedSec % 60} วินาที`;
+}
+
+export function getStaleEscalationTier(timestamp?: number | null, clock = Date.now() / 1000): "critical" | "warning" | "normal" {
+  if (!timestamp || !Number.isFinite(timestamp)) return "warning";
+  const effectiveClock = Number.isFinite(clock) && clock > 0 ? clock : Date.now() / 1000;
+  const elapsedSec = Math.max(0, Math.floor(effectiveClock - timestamp));
+  if (elapsedSec >= 60) return "critical";
+  if (elapsedSec > 15) return "warning";
+  return "normal";
+}
 
 export function scoreNews2RR(rr?: number | null): number | null {
   if (typeof rr !== "number" || !Number.isFinite(rr)) return null;
@@ -121,10 +142,13 @@ export function calculateModifiedNews2(state: MonitorData | undefined, fresh: bo
   };
 }
 
-export function PatientAnalysis({ state }: { state?: MonitorData }) {
-  const [now, setNow] = useState(() => Date.now() / 1000);
-  useEffect(() => { const timer = setInterval(() => setNow(Date.now() / 1000), 1000); return () => clearInterval(timer); }, []);
+export function PatientAnalysis({ state, now: nowProp }: { state?: MonitorData; now?: number }) {
+  const [tickNow, setTickNow] = useState(() => Date.now() / 1000);
+  useEffect(() => { const timer = setInterval(() => setTickNow(Date.now() / 1000), 1000); return () => clearInterval(timer); }, []);
+  const now = typeof nowProp === "number" && Number.isFinite(nowProp) && nowProp > 0 ? nowProp : tickNow;
   const fresh = isFreshReading(state, now);
+  const staleText = formatStaleDuration(state?.timestamp, now);
+  const staleTier = getStaleEscalationTier(state?.timestamp, now);
   const analysis = safeAnalysis(state, now, fresh) ?? { ...state?.analysis, forecast: null, status: !fresh ? "STALE_DATA" : state?.analysis?.status === "READY" ? "STALE_ANALYSIS" : state?.analysis?.status };
   const isReady = analysis?.status === "READY" && Boolean(analysis.forecast);
   const messages: Record<string, string> = {
@@ -178,7 +202,16 @@ export function PatientAnalysis({ state }: { state?: MonitorData }) {
 
     {!isReady && (
       <div className={s.notice} role="status" style={{ marginTop: 10, marginBottom: 12 }}>
-        <b>สถานะ Abstention (ระงับผลคาดการณ์ชั่วคราว):</b> ระบบไม่แสดงตัวเลขพยากรณ์เมื่อสัญญาณชีพขาดช่วง เก่าเกินเกณฑ์ หรือยังสะสมหน้าต่างข้อมูล 60 วินาทีไม่ครบ เพื่อป้องกันการเข้าใจผิดทางคลินิก
+        <b>สถานะ Abstention (ระงับผลคาดการณ์ชั่วคราว):</b>{" "}
+        {!fresh && (
+          <span
+            className={`${s.deviceFactBadge} ${staleTier === "critical" ? s.badgeCritical : s.badgeWarning}`}
+            style={{ display: "inline-block", marginRight: 8, fontSize: 12, padding: "4px 10px", borderRadius: 999 }}
+          >
+            {staleText} (งดประเมินผลอัตโนมัติ)
+          </span>
+        )}
+        ระบบไม่แสดงตัวเลขพยากรณ์เมื่อสัญญาณชีพขาดช่วง เก่าเกินเกณฑ์ หรือยังสะสมหน้าต่างข้อมูล 60 วินาทีไม่ครบ เพื่อป้องกันการเข้าใจผิดทางคลินิก
       </div>
     )}
 
@@ -206,7 +239,7 @@ export function PatientAnalysis({ state }: { state?: MonitorData }) {
 
     <details className={s.learnMoreDrawer}>
       <summary className={s.learnMoreSummary}>
-        <span>🧠 รายละเอียดโมเดลพยากรณ์ 30 วินาที และเงื่อนไข Abstention (Learn More)</span>
+        <span>รายละเอียดโมเดลพยากรณ์ 30 วินาที และเงื่อนไข Abstention (Learn More)</span>
         <span className={s.learnMoreBadge}>วิธีคำนวณของ AI</span>
       </summary>
       <div className={s.learnMoreBody}>
@@ -217,10 +250,13 @@ export function PatientAnalysis({ state }: { state?: MonitorData }) {
   </section>;
 }
 
-export function LatestVitals({ state }: { state?: MonitorData }) {
-  const [now, setNow] = useState(() => Date.now() / 1000);
-  useEffect(() => { const timer = setInterval(() => setNow(Date.now() / 1000), 1000); return () => clearInterval(timer); }, []);
+export function LatestVitals({ state, now: nowProp }: { state?: MonitorData; now?: number }) {
+  const [tickNow, setTickNow] = useState(() => Date.now() / 1000);
+  useEffect(() => { const timer = setInterval(() => setTickNow(Date.now() / 1000), 1000); return () => clearInterval(timer); }, []);
+  const now = typeof nowProp === "number" && Number.isFinite(nowProp) && nowProp > 0 ? nowProp : tickNow;
   const fresh = isFreshReading(state, now);
+  const staleText = formatStaleDuration(state?.timestamp, now);
+  const staleTier = getStaleEscalationTier(state?.timestamp, now);
   const news2 = calculateModifiedNews2(state, fresh);
   const metrics = [
     { short: 'HR', label: 'ชีพจร', unit: 'bpm', value: state?.heart_rate, tone: 'heart', score: news2.hrScore, normalHint: 'เกณฑ์ปกติ 51–90' },
@@ -235,9 +271,27 @@ export function LatestVitals({ state }: { state?: MonitorData }) {
       </div>
       <span className={`monitor-status ${fresh ? 'is-live' : 'is-stale'}`}>
         <i />
-        {fresh ? "ข้อมูลล่าสุด" : "รอข้อมูลใหม่ / ข้อมูลขาดช่วง"}
+        {fresh ? "ข้อมูลล่าสุด" : `${staleText} (งดประเมินผลอัตโนมัติ)`}
       </span>
     </div>
+
+    {!fresh && (
+      <div
+        role="status"
+        style={{
+          marginTop: 10,
+          padding: "10px 14px",
+          borderRadius: 10,
+          border: `1.5px solid ${staleTier === "critical" ? "#d46b7a" : "#c89532"}`,
+          background: staleTier === "critical" ? "#fff0f2" : "#fff6de",
+          color: staleTier === "critical" ? "#8c1d2d" : "#6d4800",
+          fontWeight: 700,
+          fontSize: 13,
+        }}
+      >
+        {staleText} (งดประเมินผลอัตโนมัติ) · กรุณาตรวจสอบหัววัดข้างเตียงและประเมินผู้ป่วยโดยตรง
+      </div>
+    )}
 
     <div
       style={{
@@ -294,7 +348,7 @@ export function LatestVitals({ state }: { state?: MonitorData }) {
 
     <details className={s.learnMoreDrawer}>
       <summary className={s.learnMoreSummary}>
-        <span>📋 เกณฑ์การให้คะแนน Modified NEWS2 Sub-score 3 ตัวแปร (Learn More)</span>
+        <span>เกณฑ์การให้คะแนน Modified NEWS2 Sub-score 3 ตัวแปร (Learn More)</span>
         <span className={s.learnMoreBadge}>เกณฑ์มาตรฐาน</span>
       </summary>
       <div className={s.learnMoreBody}>
@@ -312,18 +366,27 @@ export function LatestVitals({ state }: { state?: MonitorData }) {
   </section>;
 }
 
-export default function MonitorPanel({ openPatient, compact = false }: { openPatient: (id: string) => void; compact?: boolean }) {
+export default function MonitorPanel({ openPatient, compact = false, now: nowProp }: { openPatient: (id: string) => void; compact?: boolean; now?: number }) {
   const { data: state, error, refresh } = usePatientResource<Worker>('/api/monitor/status', 5000);
+  const [tickNow, setTickNow] = useState(() => Date.now() / 1000);
+  useEffect(() => { const timer = setInterval(() => setTickNow(Date.now() / 1000), 1000); return () => clearInterval(timer); }, []);
+  const now = typeof nowProp === "number" && Number.isFinite(nowProp) && nowProp > 0 ? nowProp : tickNow;
+  const workerStale = Boolean(state?.timestamp && !isFreshReading({ timestamp: state.timestamp, status: state.status === "RUNNING" ? "NORMAL" : "STALE_DATA" }, now));
   const [id, setId] = useState("");
   function find(e: FormEvent) { e.preventDefault(); openPatient(id.trim().toUpperCase()); }
   return <section className="monitor-panel"><div className="monitor-heading"><div><span className="portal-kicker">AUTONOMOUS MONITOR</span>
-    <h2>ติดตามอัตโนมัติด้วยโมเดล AI</h2></div><span className={`monitor-status${state?.status === 'RUNNING' ? '' : ' is-stale'}`}>{state?.status === "RUNNING" ? "กำลังทำงาน" : state?.status === "STOPPED" ? "หยุดทำงาน" : state?.status ?? "กำลังตรวจการเชื่อมต่อ"} · {state?.fresh_beds ?? '—'}/{state?.total_beds ?? '—'} คน</span></div>
+    <h2>ติดตามอัตโนมัติด้วยโมเดล AI</h2></div><span className={`monitor-status${state?.status === 'RUNNING' && !workerStale ? '' : ' is-stale'}`}>{state?.status === "RUNNING" ? "กำลังทำงาน" : state?.status === "STOPPED" ? "หยุดทำงาน" : state?.status ?? "กำลังตรวจการเชื่อมต่อ"} · {state?.fresh_beds ?? '—'}/{state?.total_beds ?? '—'} คน</span></div>
     {error && <p className="patient-warning" role="alert">{error} <button onClick={refresh}>ลองใหม่</button></p>}
+    {state?.timestamp !== undefined && workerStale && (
+      <div className={s.notice} role="status" style={{ marginTop: 8, marginBottom: 10 }}>
+        <b>{formatStaleDuration(state.timestamp, now)} (งดประเมินผลอัตโนมัติ)</b>
+      </div>
+    )}
     <p className="monitor-description">{state?.ingest_mode === "replay" ? "กำลังเล่นข้อมูล BIDMC ตามเวลา · ทะเบียนผู้ป่วยจำลอง" : state?.ingest_mode === "mqtt" ? "รับข้อมูลจาก MQTT" : "รอสถานะแหล่งข้อมูล"} · ทำงานเมื่อ backend เปิดอยู่</p>
     <form className="monitor-search" onSubmit={find}><label htmlFor="quick-id">เปิดข้อมูลจาก ID</label><input id="quick-id" value={id} onChange={(e) => setId(e.target.value.toUpperCase())} placeholder="A001 หรือ TEST_P" maxLength={64} autoCapitalize="characters" spellCheck={false} required /><button disabled={!id.trim()}>เรียกดูผล AI</button></form>
     <details className={s.learnMoreDrawer} open={!compact}>
       <summary className={s.learnMoreSummary}>
-        <span>📊 ที่มาของข้อมูลและผลทดสอบโมเดล (Learn More)</span>
+        <span>ที่มาของข้อมูลและผลทดสอบโมเดล (Learn More)</span>
         <span className={s.learnMoreBadge}>MAE &amp; Baseline</span>
       </summary>
       <div className={s.learnMoreBody}>

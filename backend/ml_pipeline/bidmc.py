@@ -32,9 +32,9 @@ def load_recordings():
 
 def valid_values(values):
     return (np.isfinite(values).all() and (values > 0).all()
-            and (values[:, 0] >= 20).all() and (values[:, 0] <= 250).all()
+            and (values[:, 0] >= 30).all() and (values[:, 0] <= 240).all()
             and (values[:, 1] >= 50).all() and (values[:, 1] <= 100).all()
-            and (values[:, 2] <= 80).all()
+            and (values[:, 2] >= 4).all() and (values[:, 2] <= 60).all()
             and (len(values) < 2 or (np.abs(np.diff(values[:, 0])) <= 50).all()))
 
 

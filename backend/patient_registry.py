@@ -38,6 +38,60 @@ _TEMPLATES = {
 _BLOOD_GROUPS = ("A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-")
 _DOCTORS = ("Dr. Wichai", "Dr. Napat", "Dr. Anong", "Dr. Kittisak")
 
+DOCTOR_ROSTER = {
+    "doctor5": {
+        "doctor_id": "doctor5",
+        "display_name": "นพ. วิชัย ใจดี",
+        "doctor_label": "นพ. วิชัย ใจดี (Dr. Wichai)",
+        "role": "แพทย์เจ้าของไข้ (ดูแล 5 เตียง)",
+        "department": "อายุรกรรมระบบทางเดินหายใจและหัวใจ",
+    },
+    "dr_napat": {
+        "doctor_id": "dr_napat",
+        "display_name": "พญ. ณภัทร สุขใจ",
+        "doctor_label": "พญ. ณภัทร สุขใจ (Dr. Napat)",
+        "role": "แพทย์เจ้าของไข้ (โซน A)",
+        "department": "อายุรกรรมระบบทางเดินหายใจ",
+    },
+    "dr_anong": {
+        "doctor_id": "dr_anong",
+        "display_name": "พญ. อนงค์ รักษ์ดี",
+        "doctor_label": "พญ. อนงค์ รักษ์ดี (Dr. Anong)",
+        "role": "แพทย์เจ้าของไข้ (โซน B)",
+        "department": "อายุรกรรมโรคหัวใจและเมตาบอลิซึม",
+    },
+    "dr_kittisak": {
+        "doctor_id": "dr_kittisak",
+        "display_name": "นพ. กิตติศักดิ์ มั่นคง",
+        "doctor_label": "นพ. กิตติศักดิ์ มั่นคง (Dr. Kittisak)",
+        "role": "แพทย์เจ้าของไข้ (โซน C)",
+        "department": "อายุรกรรมระบบประสาทและการดูแลระยะยาว",
+    },
+    "test_d": {
+        "doctor_id": "test_d",
+        "display_name": "ธุวานนธ์ โต้ตอบ",
+        "doctor_label": "ธุวานนธ์ โต้ตอบ",
+        "role": "แพทย์ทดสอบ",
+        "department": "เวชศาสตร์ผู้สูงอายุและการดูแลที่บ้าน",
+    },
+}
+
+DOCTOR_FIVE_PATIENT_IDS = ("A001", "A002", "A003", "A004", "B001")
+
+
+def _assigned_doctor_for_bed(patient_id: str, zone: str) -> tuple[str, str]:
+    if patient_id in DOCTOR_FIVE_PATIENT_IDS:
+        info = DOCTOR_ROSTER["doctor5"]
+        return info["doctor_id"], info["doctor_label"]
+    if zone == "A":
+        info = DOCTOR_ROSTER["dr_napat"]
+        return info["doctor_id"], info["doctor_label"]
+    if zone == "B":
+        info = DOCTOR_ROSTER["dr_anong"]
+        return info["doctor_id"], info["doctor_label"]
+    info = DOCTOR_ROSTER["dr_kittisak"]
+    return info["doctor_id"], info["doctor_label"]
+
 
 def build_patient_registry() -> dict[str, dict]:
     registry: dict[str, dict] = {}
@@ -50,6 +104,7 @@ def build_patient_registry() -> dict[str, dict]:
             age = rng.randint(48, 91)
             bedbound = zone == "C" or (zone == "A" and bed_index % 5 == 0)
             glucose = round(rng.uniform(92, 142) + (18 if "Diabetes" in template["condition"] else 0), 1)
+            doctor_id, doctor_label = _assigned_doctor_for_bed(patient_id, zone)
             registry[patient_id] = {
                 "patient_id": patient_id,
                 "name": f"Synthetic Patient {patient_id}",
@@ -63,7 +118,8 @@ def build_patient_registry() -> dict[str, dict]:
                 "condition": template["condition"],
                 "diagnoses": [template["condition"], "Bedbound care" if bedbound else "Mobility monitoring"],
                 "mobility": "Bedbound" if bedbound else "Assisted mobility",
-                "doctor": _DOCTORS[(bed_index + zone_index) % len(_DOCTORS)],
+                "doctor": doctor_label,
+                "assigned_staff_id": doctor_id,
                 "respiratory_rate": template["rr"],
                 "sleep_hours": round(rng.uniform(4.5, 7.5), 1),
                 "sleep_quality": ("Poor" if bedbound and bed_index % 3 == 0 else "Fair" if bed_index % 3 else "Good"),

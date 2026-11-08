@@ -16,9 +16,22 @@ def kind(reason):
 
 
 def init(database):
-    with closing(sqlite3.connect(database, timeout=15)) as conn, conn:
+    with closing(sqlite3.connect(database, timeout=15)) as conn:
+        conn.execute('PRAGMA busy_timeout = 15000')
+        conn.execute('PRAGMA journal_mode = WAL')
         conn.row_factory = sqlite3.Row
-        conn.execute('BEGIN IMMEDIATE')
+        columns = {r[1] for r in conn.execute('PRAGMA table_info(agent_alerts)')}
+        needed = {'episode_key', 'merged_into', 'last_seen_at', 'occurrences', 'recovered_at', 'version'}
+        has_index = conn.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_open_episode'").fetchone()
+        if needed.issubset(columns) and has_index:
+            unmigrated = conn.execute('SELECT 1 FROM agent_alerts WHERE episode_key IS NULL LIMIT 1').fetchone()
+            if not unmigrated:
+                return
+
+    with closing(sqlite3.connect(database, timeout=15)) as conn, conn:
+        conn.execute('PRAGMA busy_timeout = 15000')
+        conn.execute('PRAGMA journal_mode = WAL')
+        conn.row_factory = sqlite3.Row
         conn.execute('DROP INDEX IF EXISTS idx_open_episode')
         columns = {r[1] for r in conn.execute('PRAGMA table_info(agent_alerts)')}
         for name, definition in [('episode_key', 'TEXT'), ('merged_into', 'INTEGER'),

@@ -84,7 +84,7 @@ export default function ScenarioLab({ openEvidence }: { openEvidence: () => void
     </div>}
     <details className={styles.learnMoreDrawer}>
       <summary className={styles.learnMoreSummary}>
-        <span>🧪 หลักการทดสอบ 6 ขั้นตอนของทีม AI Agent ในโหมดจำลอง (Dry-Run Pipeline · Learn More)</span>
+        <span>หลักการทดสอบ 6 ขั้นตอนของทีม AI Agent ในโหมดจำลอง (Dry-Run Pipeline · Learn More)</span>
         <span className={styles.learnMoreBadge}>6-Stage Safety Gate</span>
       </summary>
       <div className={styles.learnMoreBody}>

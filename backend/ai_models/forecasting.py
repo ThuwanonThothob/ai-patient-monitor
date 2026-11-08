@@ -1,15 +1,22 @@
+"""Prototype forecasting module (DEPRECATED).
+
+This unvalidated LinearRegression module is preserved for legacy test harnesses
+and prototype demonstrations only. Production ward monitoring strictly uses
+the PhysioNet BIDMC validated model in `ai_models.monitor_model.py`.
+RESEARCH USE ONLY. NOT FOR CLINICAL USE.
+"""
 import numpy as np
 from sklearn.linear_model import LinearRegression
 
-print("📈 กำลังเตรียมระบบพยากรณ์ล่วงหน้า (Forecasting)...")
+print("📈 กำลังเตรียมระบบพยากรณ์ล่วงหน้า (Forecasting - Prototype)...")
 
 def predict_future_vitals(history_hr: list, history_spo2: list, future_steps: int = 3):
     """
-    วิเคราะห์แนวโน้ม (Trend) จากประวัติเพื่อพยากรณ์ค่าในอนาคต
+    วิเคราะห์แนวโน้ม (Trend) จากประวัติเพื่อพยากรณ์ค่าในอนาคต (Prototype Only)
     """
     # ถ้าข้อมูลน้อยเกินไป ยังไม่ทำนาย
     if len(history_hr) < 5 or len(history_spo2) < 5:
-        return {"predicted_hr": None, "predicted_spo2": None}
+        return {"predicted_hr": None, "predicted_spo2": None, "research_only": True}
 
     try:
         # สร้างแกนเวลา (X) เช่น [0, 1, 2, 3, ...]
@@ -34,8 +41,9 @@ def predict_future_vitals(history_hr: list, history_spo2: list, future_steps: in
         
         return {
             "predicted_hr": pred_hr,
-            "predicted_spo2": pred_spo2
+            "predicted_spo2": pred_spo2,
+            "research_only": True,
         }
     except Exception as e:
         print(f"❌ Forecasting Error: {e}")
-        return {"predicted_hr": None, "predicted_spo2": None}
+        return {"predicted_hr": None, "predicted_spo2": None, "research_only": True}

@@ -53,6 +53,12 @@ def record_task_transition(conn, task_id: int, previous_state: str, new_state: s
         (task_id, plan_id, patient_id, previous_state, new_state, actor, skip_reason, timestamp, created_at)
         VALUES (?,?,?,?,?,?,?,?,?)''',
         (task_id, plan_id, patient_id, previous_state, new_state, actor, skip_reason, now, now))
+    if patient_id:
+        try:
+            conn.execute('''INSERT INTO agent_audit_logs (patient_id, action, actor, detail, created_at)
+                VALUES (?,?,?,?,?)''', (patient_id, f'CARE_TASK_{new_state}', actor, f'task #{task_id}: {previous_state} -> {new_state}', now))
+        except sqlite3.OperationalError:
+            pass
 
 
 def get_task_history(task_id: int) -> list[dict]:
@@ -190,7 +196,7 @@ care_api.update_task = recorded_update_task
 care_api.review_plan = recorded_review_plan
 
 
-def overdue_care_summary(patient_id: str | None = None, now: float | None = None) -> dict:
+def overdue_care_summary(patient_id: str | None = None, now: float | None = None, auth_identity: Any = None) -> dict:
     """Count open care tasks (PENDING, ACKNOWLEDGED) split into overdue and upcoming."""
     current = time.time() if now is None else float(now)
     query = """
@@ -203,6 +209,11 @@ def overdue_care_summary(patient_id: str | None = None, now: float | None = None
     if patient_id is not None:
         query += " AND p.patient_id = ?"
         params.append(patient_id)
+    elif auth_identity is not None:
+        import auth
+        clause, scope_values = auth.scoped_sql('p.patient_id', scope=auth_identity)
+        query += f" AND {clause}"
+        params.extend(scope_values)
 
     overdue_count = 0
     upcoming_count = 0

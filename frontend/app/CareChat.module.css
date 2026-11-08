@@ -58,13 +58,14 @@
 }
 
 .sidebarRefreshBtn {
-  height: 32px;
-  padding: 4px 10px;
+  min-height: 44px;
+  height: 44px;
+  padding: 6px 14px;
   border: 1px solid #d0d7de;
   border-radius: 8px;
   background: #ffffff;
   color: #1f2328;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
 }
@@ -89,7 +90,11 @@
 
 .filterTab {
   flex: 1;
-  padding: 6px 12px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
   border-radius: 18px;
   border: none;
   background: transparent;
@@ -369,14 +374,14 @@
 
 .headerBtn,
 .chat .headerBtn {
-  height: 34px;
-  min-height: 34px;
-  padding: 6px 12px;
+  height: 44px;
+  min-height: 44px;
+  padding: 8px 14px;
   border: 1px solid #d0d7de;
   border-radius: 8px;
   background: #ffffff;
   color: #1f2328;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: background 0.15s ease;
@@ -619,9 +624,9 @@
 
 .quickPill,
 .chat .quickPill {
-  font-size: 12.5px;
-  min-height: 32px;
-  padding: 6px 12px;
+  font-size: 13px;
+  min-height: 44px;
+  padding: 8px 14px;
   background: #f0f2f5;
   border: 1px solid #e4e6eb;
   border-radius: 20px;
@@ -914,7 +919,8 @@
   }
 
   .headerActions {
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
+    gap: 6px;
   }
 
   .headerBtn {

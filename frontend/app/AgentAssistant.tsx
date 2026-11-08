@@ -6,9 +6,10 @@ import { requestJson } from './apiRequest';
 import s from './AgentAssistant.module.css';
 
 type Answer = { answer: string; steps: string[]; patient_id: string | null; as_of: number };
-const sections: Record<string, string> = { overview: 'ภาพรวม', patients: 'ทะเบียนผู้ป่วย', triage: 'ติดตามการดูแล', chat: 'แชทแพทย์-ผู้ป่วย', alerts: 'เหตุการณ์แจ้งเตือน', ai: 'การทำงานของ Agent', research: 'งานวิจัย', reports: 'รายงาน', notifications: 'แจ้งเตือนมือถือ', evidence: 'หลักฐานโมเดล', care: 'แผนดูแล', trends: 'แนวโน้มย้อนหลัง', profile: 'ข้อมูลผู้ป่วย' };
+const sections: Record<string, string> = { overview: 'ภาพรวม', care_hub: 'Care Hub (ศูนย์บริบาลผู้ป่วย)', patients: 'ทะเบียนผู้ป่วย', triage: 'ติดตามการดูแล', chat: 'แชทแพทย์-ผู้ป่วย', alerts: 'เหตุการณ์แจ้งเตือน', ai: 'การทำงานของ Agent', research: 'งานวิจัย', reports: 'รายงาน', notifications: 'แจ้งเตือนมือถือ', evidence: 'หลักฐานโมเดล', care: 'แผนดูแล', settings: 'ตั้งค่าระบบ', trends: 'แนวโน้มย้อนหลัง', profile: 'ข้อมูลผู้ป่วย' };
 
 export default function AgentAssistant({ patientId, section, staff = false }: { patientId?: string; section: string; staff?: boolean }) {
+  const launcherRef = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const controller = useRef<AbortController | null>(null);
   const [target, setTarget] = useState(patientId ?? '');
@@ -32,8 +33,8 @@ export default function AgentAssistant({ patientId, section, staff = false }: { 
     finally { if (!current.signal.aborted) setBusy(false); }
   }
   return <>
-    <button type="button" className={s.launcher} aria-label="เปิดผู้ช่วย Agentic" onClick={() => dialog.current?.showModal()}><Icon name="ai" size={24} /><span>ถาม Agentic<small>ผู้ช่วยอ่านข้อมูล</small></span></button>
-    <dialog ref={dialog} className={s.dialog} aria-labelledby="agent-title" onClick={e => { if (e.target === dialog.current) dialog.current?.close(); }}>
+    <button ref={launcherRef} type="button" className={s.launcher} aria-label="เปิดผู้ช่วย Agentic" onClick={() => dialog.current?.showModal()}><Icon name="ai" size={24} /><span>ถาม Agentic<small>ผู้ช่วยอ่านข้อมูล</small></span></button>
+    <dialog ref={dialog} className={s.dialog} aria-labelledby="agent-title" onClose={() => launcherRef.current?.focus()} onClick={e => { if (e.target === dialog.current) dialog.current?.close(); }}>
       <header className={s.header}>
         <button type="button" className={s.close} aria-label="ปิดผู้ช่วย" onClick={() => dialog.current?.close()}>×</button>
         <div className={s.mark}><Icon name="ai" size={26} /></div>

@@ -105,14 +105,14 @@ export default function ResearchPanel() {
     <header className={s.header}><div><small className={s.eyebrow}>AI RESEARCH LAB · OFFLINE EVIDENCE</small><h2>เห็นผล AI จากข้อมูลจริง</h2><p>ทดสอบย้อนหลัง แยกจาก 60 เตียง · ไม่ส่งข้อมูลไป Gemini · ไม่สร้างคำสั่งรักษา</p></div><button onClick={() => { resetCase(); setReport(null); setListing(null); setRevision((n) => n + 1); }}>โหลดผลใหม่</button></header>
     <details className={s.learnMoreDrawer} role="note" aria-label="คำอธิบายการแยกส่วนโมเดลสำหรับแพทย์และผู้ตรวจประเมิน">
       <summary className={s.learnMoreSummary}>
-        <span>🔬 ข้อมูลขอบเขตโมเดลและระเบียบวิธีวิจัย (Learn More)</span>
+        <span>ข้อมูลขอบเขตโมเดลและระเบียบวิธีวิจัย (Learn More)</span>
         <span className={s.learnMoreBadge}>รายละเอียดทางเทคนิค</span>
       </summary>
       <div className={s.learnMoreBody}>
         <small className={s.eyebrow}>CLINICAL &amp; EVALUATOR SCOPE · การแยกส่วนโมเดลอย่างชัดเจน</small>
         <div className={s.twoColumns}>
           <div><strong>1. โมเดลเฝ้าระวังสัญญาณชีพสด 1 Hz (PhysioNet BIDMC)</strong><p className={s.muted}>ทำงานบนกระแสข้อมูลสัญญาณชีพแบบต่อเนื่อง (HR, SpO₂, RR) สำหรับเฝ้าระวังและพยากรณ์แนวโน้มระยะสั้น (+30 วินาที) ในระบบมอนิเตอร์หอผู้ป่วย 60 เตียง</p></div>
-          <div><strong>2. โมเดลวิจัยย้อนหลัง ICU Sepsis Benchmark</strong><p className={s.muted}>หน้านี้ประมวลผลข้อมูลย้อนหลังระดับรายชั่วโมงจาก PhysioNet Sepsis Challenge แบบออฟไลน์ เพื่อตรวจสอบความแม่นยำและข้อจำกัดทางสถิติ แยกขาดจากระบบเตือนภัยข้างเตียงและไม่มีผลต่อการสั่งการรักษาจริง</p></div>
+          <div><strong>2. โมเดลวิจัยย้อนหลัง ICU Sepsis Benchmark</strong><p className={s.muted}>หน้านี้ประมวลผลข้อมูลย้อนหลังระดับรายชั่วโมงจาก PhysioNet Sepsis Challenge แบบออฟไลน์ เพื่อดูสมรรถนะการคัดกรองความเสี่ยงล่วงหน้า (Sensitivity / Specificity / Brier Score) และข้อจำกัดทางสถิติ แยกขาดจากระบบเตือนภัยข้างเตียงและไม่มีผลต่อการสั่งการรักษาจริง</p></div>
         </div>
       </div>
     </details>
@@ -179,7 +179,7 @@ export default function ResearchPanel() {
           {reveal && <div className={s.warning}>Inferred onset: {record.onset_hour ?? "ไม่มีใน label"}{record.onset_hour !== null ? " ชม. (เริ่ม label บวก + 6 ชม.)" : ""}<ul>{models.map((model) => <li key={model}>{names[model]}: {outcomes[record.outcomes[model].outcome]} · เตือนครั้งแรก {record.outcomes[model].first_alert_hour ?? "—"}</li>)}</ul></div>}
           <details className={s.learnMoreDrawer}>
             <summary className={s.learnMoreSummary}>
-              <span>📋 หลักฐาน ณ ชั่วโมง {point.hour} · ตารางข้อมูลเข้าและอายุข้อมูล (Learn More)</span>
+              <span>หลักฐาน ณ ชั่วโมง {point.hour} · ตารางข้อมูลเข้าและอายุข้อมูล (Learn More)</span>
               <span className={s.learnMoreBadge}>ดูข้อมูลเข้า</span>
             </summary>
             <div className={s.learnMoreBody}>
@@ -192,7 +192,7 @@ export default function ResearchPanel() {
       </div>
       <details className={s.learnMoreDrawer}>
         <summary className={s.learnMoreSummary}>
-          <span>📚 วิธีทดลอง ข้อจำกัด และที่มาของชุดข้อมูล Sepsis 2019 (สำหรับอธิบายงานวิจัย · Learn More)</span>
+          <span>วิธีทดลอง ข้อจำกัด และที่มาของชุดข้อมูล Sepsis 2019 (สำหรับอธิบายงานวิจัย · Learn More)</span>
           <span className={s.learnMoreBadge}>Protocol &amp; Limitations</span>
         </summary>
         <div className={s.learnMoreBody}>

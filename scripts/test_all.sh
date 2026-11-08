@@ -2,8 +2,9 @@
 # ==============================================================================
 # Unified Automated Test Runner for Smart Ward AI Patient Monitor
 # Steps:
-#   1. Backend Unittest (Python)
-#   2. Frontend Node Contract Tests
+#   0. Bootstrap Test Fixtures (BIDMC / PMD / Models for Clean CI Checkouts)
+#   1. Backend Unittests (backend/tests + scripts/tests)
+#   2. Frontend Node Contract & Adversarial Tests
 #   3. TypeScript Type Checking (tsc --noEmit)
 #   4. Frontend Code Quality (ESLint)
 # ==============================================================================
@@ -32,36 +33,52 @@ echo "Python:    $("$PYTHON" --version 2>&1)"
 echo "Node:      $(node --version 2>&1 || echo 'not found')"
 echo "=================================================================="
 
-# Step 1: Backend Unittest
+# Step 0: Bootstrap Test Fixtures (idempotent; no-op when real data/models exist)
 echo ""
 echo "------------------------------------------------------------------"
-echo "[Step 1/4] Running Backend Unittests..."
+echo "[Step 0/5] Ensuring Reproducible Test Fixtures & Model Artifacts..."
 echo "------------------------------------------------------------------"
-"$PYTHON" -m unittest discover -s backend/tests -v
+"$PYTHON" scripts/bootstrap_test_fixtures.py
+echo "✅ Test Fixtures Verified"
+
+# Step 1a: Backend Unittests
+echo ""
+echo "------------------------------------------------------------------"
+echo "[Step 1/5] Running Backend Unittests (backend/tests)..."
+echo "------------------------------------------------------------------"
+"$PYTHON" -m unittest discover -s backend/tests -p "test_*.py" -v
 echo "✅ Backend Unittests Passed"
+
+# Step 1b: Scripts Unittests
+echo ""
+echo "------------------------------------------------------------------"
+echo "[Step 2/5] Running Scripts Unittests (scripts/tests)..."
+echo "------------------------------------------------------------------"
+"$PYTHON" -m unittest discover -s scripts/tests -p "test_*.py" -v
+echo "✅ Scripts Unittests Passed"
 
 # Step 2: Frontend Node Tests
 echo ""
 echo "------------------------------------------------------------------"
-echo "[Step 2/4] Running Frontend Node Contract Tests..."
+echo "[Step 3/5] Running Frontend Node Contract & Adversarial Tests..."
 echo "------------------------------------------------------------------"
-npm --prefix frontend test
-echo "✅ Frontend Contract Tests Passed"
+(cd frontend && npm test)
+echo "✅ Frontend Contract & Adversarial Tests Passed"
 
 # Step 3: TypeScript Typecheck
 echo ""
 echo "------------------------------------------------------------------"
-echo "[Step 3/4] Running TypeScript Typecheck (tsc --noEmit)..."
+echo "[Step 4/5] Running TypeScript Typecheck (tsc --noEmit)..."
 echo "------------------------------------------------------------------"
-./frontend/node_modules/.bin/tsc --project frontend/tsconfig.json --noEmit
+(cd frontend && npx tsc --noEmit)
 echo "✅ TypeScript Typecheck Passed"
 
 # Step 4: ESLint
 echo ""
 echo "------------------------------------------------------------------"
-echo "[Step 4/4] Running Frontend Linter (ESLint)..."
+echo "[Step 5/5] Running Frontend Linter (ESLint)..."
 echo "------------------------------------------------------------------"
-npm --prefix frontend run lint -- --rule 'react-hooks/purity: warn'
+(cd frontend && npm run lint -- --rule 'react-hooks/purity: warn')
 echo "✅ Frontend ESLint Passed"
 
 echo ""

@@ -280,5 +280,51 @@ test('Sprint 4 Full Frontend Overhaul contract: Night Shift toggle, SBAR summary
   assert.match(careChatCss, /\.chat\s*\{[^}]*min-height:\s*560px;/, 'Standalone patient CareChat must have explicit container height');
 });
 
+test('Changes 1-3 contract: Unified Settings, Search button removal, 3 Demo Roles (Doctor/Patient/Central), and Care Hub', () => {
+  const staffSource = readFileSync(new URL('../app/StaffDashboard.tsx', import.meta.url), 'utf8');
+  const careHubSource = readFileSync(new URL('../app/CareHubPanel.tsx', import.meta.url), 'utf8');
+  const portalShellSource = readFileSync(new URL('../app/PortalShell.tsx', import.meta.url), 'utf8');
+
+  // Change 1: Search patient button removed, inline search bar covers `/` shortcut, unified Settings with 4 groups & persistence
+  assert.doesNotMatch(staffSource, /🔍 ค้นหาผู้ป่วย \(\/\)/, 'Redundant search patient button must be removed');
+  assert.match(staffSource, /aria-label=["']ค้นหาผู้ป่วยด่วน["']/, 'Inline search input must exist in header');
+  assert.match(staffSource, /\/api\/session\/settings/, 'Settings must be persisted per user via /api/session/settings');
+  assert.match(staffSource, /การแสดงผล \(Display\)/);
+  assert.match(staffSource, /เสียงและการแจ้งเตือน \(Alerts & Sounds\)/);
+  assert.match(staffSource, /แจ้งเตือนมือถือ \(Mobile Notifications\)/);
+  assert.match(staffSource, /ตั้งค่าและพิสูจน์ AI \(AI & Governance\)/);
+  assert.match(staffSource, /playCriticalChime\(true\)/, 'Alert sound test button must work in Settings');
+  assert.match(staffSource, /playWarningTone\(true\)/, 'Warning tone test button must work in Settings');
+
+  // Change 2: Three roles (Doctor 5 beds, Central read-only chat, Patient) & responsible doctor visible
+  assert.match(portalShellSource, /doctor5/);
+  assert.match(portalShellSource, /central/);
+  assert.match(staffSource, /แพทย์ผู้รับผิดชอบ/);
+  assert.match(staffSource, /navGroups\.filter\(group => chatEnabled \|\| group\.sections\[0\] !== 'chat'\)/);
+
+  // Change 3 & Care Hub cleanup: Care Hub keeps live vitals, Modified NEWS2, abstention, alerts, trends, SBAR, and care plan; redundant chat is eliminated from Care Hub
+  assert.match(staffSource, /<CareHubPanel/);
+  assert.match(staffSource, /routeSection/);
+  assert.match(careHubSource, /CARE HUB · ศูนย์บริบาลผู้ป่วยรายบุคคล/);
+  assert.match(careHubSource, /Modified NEWS2/);
+  assert.match(careHubSource, /INVALID_DATA/);
+  assert.match(careHubSource, /STALE_DATA/);
+  assert.match(careHubSource, /WorkflowBoard/);
+  assert.match(careHubSource, /StaffTrendPanel/);
+  assert.doesNotMatch(careHubSource, /<CareChat/, 'Redundant chat must be removed from Care Hub');
+  assert.doesNotMatch(careHubSource, /<CarePanel/, 'Care plans must be removed from Care Hub and moved to care tasks mode');
+  assert.match(staffSource, /<CarePanel/, 'CarePanel must be available in care tasks mode');
+  assert.match(careHubSource, /loadedPatientId !== activePatientId/, 'CareHubPanel must not unmount WorkflowBoard on background refreshes');
+
+  const carePanelSource = readFileSync(new URL('../app/CarePanel.tsx', import.meta.url), 'utf8');
+  assert.match(carePanelSource, /QUICK_TASK_NOTES/, 'CarePanel TaskCard must provide quick task completion presets');
+  assert.match(carePanelSource, /autoActivate/, 'CarePanel must support 1-step plan creation and activation');
+
+  const careProfileSource = readFileSync(new URL('../app/CareProfilePanel.tsx', import.meta.url), 'utf8');
+  assert.match(careProfileSource, /fillRangePreset/, 'CareProfilePanel must provide clinical range presets');
+  assert.match(careProfileSource, /autoApprove/, 'CareProfilePanel must support 1-step profile save and review');
+});
+
+
 
 

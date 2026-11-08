@@ -51,9 +51,17 @@ from posture_api import router as posture_router
 from research_api import router as research_router
 from evidence_handoff import format_evidence_handoff
 from ai_models import monitor_model
+from ai_models.news2 import calculate_modified_news2
 from monitor_service import MonitorWorker, init_monitor_db, patient_state, worker_status
 
 DB_NAME = str(auth.DB)
+
+
+def db_connect():
+    conn = sqlite3.connect(DB_NAME, timeout=15)
+    conn.execute("PRAGMA busy_timeout = 15000")
+    conn.execute("PRAGMA journal_mode = WAL")
+    return conn
 INGEST_MODE = os.getenv("WARD_INGEST_MODE", "replay")
 if INGEST_MODE not in {"replay", "mqtt", "off"}:
     raise ValueError("WARD_INGEST_MODE must be replay, mqtt, or off")
@@ -65,7 +73,7 @@ nurse_agent = None
 agent_last_enqueue: dict[str, tuple[float, str, float | None]] = {}
 
 def init_db():
-    conn = sqlite3.connect(DB_NAME)
+    conn = db_connect()
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS vital_logs (
@@ -164,7 +172,7 @@ def init_db():
 
 def save_to_db(patient_id: str, hr: int, spo2: int, status: str, ts: float, clinical: dict | None = None):
     clinical = clinical or {}
-    conn = sqlite3.connect(DB_NAME)
+    conn = db_connect()
     cursor = conn.cursor()
     cursor.execute(
         """INSERT INTO vital_logs
@@ -184,7 +192,7 @@ def save_to_db(patient_id: str, hr: int, spo2: int, status: str, ts: float, clin
 
 def get_recent_vital_history(patient_id: str, limit: int = 50) -> list[dict]:
     """Return ordered telemetry for a feature builder, never a future outcome."""
-    conn = sqlite3.connect(DB_NAME)
+    conn = db_connect()
     cursor = conn.cursor()
     cursor.execute(
         """SELECT heart_rate, spo2, timestamp, respiratory_rate, blood_glucose
@@ -219,7 +227,7 @@ def record_audit_event(
     created_at: float | None = None,
 ) -> None:
     """Append an immutable, local audit record for the synthetic workflow."""
-    conn = sqlite3.connect(DB_NAME)
+    conn = db_connect()
     cursor = conn.cursor()
     cursor.execute(
         """INSERT INTO agent_audit_logs (alert_id, patient_id, action, actor, detail, created_at)
@@ -234,14 +242,19 @@ def persist_agent_alert(alert: dict) -> dict:
     """Persist an agent proposal before broadcasting it to connected dashboards."""
     vitals = alert.get("vitals", {})
     created_at = float(alert["timestamp"])
-    conn = sqlite3.connect(DB_NAME, timeout=15)
+    conn = db_connect()
     try:
-        conn.execute('BEGIN IMMEDIATE')
         cursor = conn.cursor()
         episode_key = alert.get('episode_key') or alert_episodes.kind(alert['reason'])
         existing = cursor.execute("""SELECT id,status FROM agent_alerts WHERE patient_id=? AND episode_key=?
             AND merged_into IS NULL AND status IN ('NEW','ACKNOWLEDGED','ESCALATED')""", (alert['patient_id'], episode_key)).fetchone()
         if existing:
+            return {**alert, 'alert_id': existing[0], 'workflow_status': existing[1]}
+        conn.execute('BEGIN IMMEDIATE')
+        existing = cursor.execute("""SELECT id,status FROM agent_alerts WHERE patient_id=? AND episode_key=?
+            AND merged_into IS NULL AND status IN ('NEW','ACKNOWLEDGED','ESCALATED')""", (alert['patient_id'], episode_key)).fetchone()
+        if existing:
+            conn.rollback()
             return {**alert, 'alert_id': existing[0], 'workflow_status': existing[1]}
         cursor.execute(
             """INSERT INTO agent_alerts
@@ -263,6 +276,12 @@ def persist_agent_alert(alert: dict) -> dict:
         )
         conn.commit()
         return {**alert, "alert_id": alert_id, "workflow_status": "NEW"}
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise
     finally:
         conn.close()
 
@@ -321,7 +340,7 @@ def get_workflow_alerts(status: str = "open", zone: str | None = None, limit: in
     if patient_id:
         filters += ' AND patient_id=?'
         params.append(patient_id.upper())
-    conn = sqlite3.connect(DB_NAME)
+    conn = db_connect()
     cursor = conn.cursor()
     cursor.execute(
         f"""SELECT id, patient_id, severity, reason, recommended_next_step,
@@ -347,7 +366,7 @@ def get_workflow_alerts(status: str = "open", zone: str | None = None, limit: in
 def get_patient_timeline(patient_id: str, limit: int = 80) -> list[dict]:
     """Combine monitoring, agent workflow and coordination history by time."""
     limit = min(max(limit, 1), 150)
-    conn = sqlite3.connect(DB_NAME)
+    conn = db_connect()
     cursor = conn.cursor()
     cursor.execute(
         """SELECT heart_rate, spo2, status, timestamp, respiratory_rate, blood_glucose, ecg_rhythm
@@ -406,7 +425,7 @@ def get_patient_timeline(patient_id: str, limit: int = 80) -> list[dict]:
 
 def get_triage_snapshot(zone: str | None = None, mobility: str | None = None, priority: str = "all") -> list[dict]:
     """Build an actionable, synthetic nursing triage board from latest readings."""
-    conn = sqlite3.connect(DB_NAME)
+    conn = db_connect()
     cursor = conn.cursor()
     cursor.execute('SELECT patient_id,payload FROM monitor_results')
     latest_by_patient = {row[0]: json.loads(row[1]) for row in cursor.fetchall()}
@@ -435,10 +454,13 @@ def get_triage_snapshot(zone: str | None = None, mobility: str | None = None, pr
             triage_level, rank = "ROUTINE", 2
         item = {
             "patient_id": profile["patient_id"],
+            "name": profile.get("name", profile["patient_id"]),
             "zone": profile["zone"],
             "room_number": profile["room_number"],
             "condition": profile["condition"],
             "mobility": profile["mobility"],
+            "doctor": profile.get("doctor", "-"),
+            "assigned_staff_id": profile.get("assigned_staff_id", ""),
             "triage_level": triage_level,
             "monitor_status": monitor_status,
             "open_alerts": alert_counts["total"],
@@ -477,7 +499,7 @@ def get_triage_snapshot(zone: str | None = None, mobility: str | None = None, pr
 
 def get_dashboard_snapshot() -> dict:
     """Return database-backed figures used by all dashboard sections."""
-    conn = sqlite3.connect(DB_NAME)
+    conn = db_connect()
     cursor = conn.cursor()
     # The simulation can be resized. Only count beds in the current registry so
     # historical rows from a previous configuration do not inflate the view.
@@ -505,16 +527,21 @@ def get_dashboard_snapshot() -> dict:
         profile = get_patient_profile(patient_id)
         if profile is None:
             continue
+        state_row = patient_state(DB_NAME, patient_id)
+        source = state_row.get("source") if state_row else "LIVE"
         patients.append({
             "patient_id": patient_id,
             "name": profile["name"],
             "zone": profile["zone"],
             "room_number": profile["room_number"],
+            "doctor": profile.get("doctor", "-"),
+            "assigned_staff_id": profile.get("assigned_staff_id", ""),
             "avg_hr": avg_hr,
             "min_spo2": min_spo2,
             "critical_count": critical or 0,
             "warning_count": warning or 0,
             "last_timestamp": last_timestamp,
+            "telemetry_source": source,
         })
     zone_snapshot = []
     for zone, label in ZONE_LABELS.items():
@@ -538,76 +565,96 @@ def get_dashboard_snapshot() -> dict:
         "patients": patients,
     }
 
-#ไว้ลบข้อมูลเก่า
-def cleanup_old_logs(days_to_keep=1):
+#ไว้ลบข้อมูลเก่าตามเกณฑ์ PDPA (ลบเฉพาะ Raw Telemetry เก่า ห้ามลบ Audit Trail หรือ Alerts เด็ดขาด)
+def cleanup_old_logs(days_to_keep: int | None = None) -> dict:
+    retention_days = int(os.getenv("WARD_RETENTION_DAYS", "30")) if days_to_keep is None else int(days_to_keep)
+    cutoff_timestamp = time.time() - (retention_days * 24 * 60 * 60)
+    pruned = {}
+    conn = None
     try:
-        cutoff_timestamp = time.time() - (days_to_keep * 24 * 60 * 60)
-        conn = sqlite3.connect(DB_NAME)
+        conn = db_connect()
         cursor = conn.cursor()
         cursor.execute("DELETE FROM vital_logs WHERE timestamp < ?", (cutoff_timestamp,))
-        deleted_count = cursor.rowcount
+        pruned["vital_logs"] = cursor.rowcount
+        for tbl, ts_col in [
+            ("monitor_analysis_logs", "evaluated_at"),
+            ("bedside_device_observations", "observed_at"),
+            ("bedside_posture_observations", "observed_at"),
+        ]:
+            if cursor.execute(f"SELECT 1 FROM sqlite_master WHERE type='table' AND name='{tbl}'").fetchone():
+                cursor.execute(f"DELETE FROM {tbl} WHERE {ts_col} < ?", (cutoff_timestamp,))
+                pruned[tbl] = cursor.rowcount
+        if cursor.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='push_outbox'").fetchone():
+            cursor.execute("DELETE FROM push_outbox WHERE state = 'SENT' AND updated_at < ?", (cutoff_timestamp,))
+            pruned["push_outbox"] = cursor.rowcount
         conn.commit()
-        conn.close()
-
-        if deleted_count > 0:
-            print(f"deleted {deleted_count} old log entries older than {days_to_keep} days.")
+        total_deleted = sum(pruned.values())
+        if total_deleted > 0:
+            print(f"[PDPA Retention] Pruned {total_deleted} telemetry/observation records older than {retention_days} days: {pruned}")
     except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
         print(f"Error cleaning up old logs: {e}")
+    finally:
+        if conn:
+            conn.close()
+    return pruned
 
 
-#  2. สมอง AI วิเคราะห์และประเมินอาการเชิงลึก (AI Clinical Intelligence)
+#  2. การประเมินสัญญาณชีพด้วย Modified NEWS2 Rule Engine (Deterministic Clinical Intelligence)
 def generate_ai_assessment(patient_id: str, history_rows: list):
     profile = get_patient_profile(patient_id) or {"name": "ไม่ทราบ", "age": 0, "condition": "ไม่ระบุ"}
     
     if not history_rows:
-        return {"risk_score": None, "summary": "ยังไม่มีข้อมูลเพียงพอในการวิเคราะห์", "recommendations": ["รอการรวบรวมข้อมูลสัญญาณชีพ"]}
+        return {"risk_score": None, "risk_level": "UNKNOWN", "summary": "ยังไม่มีข้อมูลเพียงพอในการวิเคราะห์", "recommendations": ["รอการรวบรวมข้อมูลสัญญาณชีพ"]}
 
-    hrs = [r[0] for r in history_rows]
-    spo2s = [r[1] for r in history_rows]
+    # Normalize rows regardless of order (extract by field position)
+    hrs = [r[0] for r in history_rows if len(r) > 0 and r[0] is not None]
+    spo2s = [r[1] for r in history_rows if len(r) > 1 and r[1] is not None]
+    rrs = [r[4] if len(r) > 4 and r[4] is not None else None for r in history_rows]
+    valid_rrs = [r for r in rrs if r is not None]
 
-    avg_hr = round(sum(hrs) / len(hrs), 1)
-    min_spo2 = min(spo2s)
-    max_hr = max(hrs)
-    
-    # ลอจิก AI ประเมินความเสี่ยงตามประวัติโรคและค่าสัญญาณชีพ
-    risk_score = 10
+    # Use the chronologically latest reading
+    sorted_rows = sorted(history_rows, key=lambda r: float(r[3]) if len(r) > 3 and r[3] is not None and math.isfinite(float(r[3])) else 0.0)
+    latest_row = sorted_rows[-1]
+    latest_hr = latest_row[0] if len(latest_row) > 0 and latest_row[0] is not None else None
+    latest_spo2 = latest_row[1] if len(latest_row) > 1 and latest_row[1] is not None else None
+    latest_rr = latest_row[4] if len(latest_row) > 4 and latest_row[4] is not None else None
+
+    news2 = calculate_modified_news2(latest_hr, latest_spo2, latest_rr)
+
+    avg_hr = round(sum(hrs) / len(hrs), 1) if hrs else None
+    min_spo2 = min(spo2s) if spo2s else None
+    max_hr = max(hrs) if hrs else None
+
     findings = []
     recommendations = []
 
-    if min_spo2 < 90:
-        risk_score += 50
-        findings.append(f"พบภาวะออกซิเจนในเลือดต่ำวิกฤต (SpO2 ต่ำสุด {min_spo2}%)")
-        recommendations.append("แจ้งบุคลากรให้ตรวจสอบการวัดและประเมินผู้ป่วยตามแนวทางของหน่วยงาน")
-    elif min_spo2 < 95:
-        risk_score += 25
-        findings.append(f"ออกซิเจนลดต่ำกว่ามาตรฐาน (SpO2 ต่ำสุด {min_spo2}%)")
-        recommendations.append("ให้บุคลากรตรวจสอบสัญญาณจากเซนเซอร์และข้อมูลทางคลินิกประกอบ")
-
-    if max_hr > 120:
-        risk_score += 35
-        findings.append(f"หัวใจเต้นเร็วผิดปกติ (Tachycardia Peak {max_hr} bpm)")
-        recommendations.append("ให้บุคลากรทบทวนชีพจรและอาการประกอบ ไม่สรุปโรคจากค่าตัวเดียว")
-    elif avg_hr > 100:
-        risk_score += 15
-        findings.append(f"ชีพจรเฉลี่ยค่อนข้างสูง ({avg_hr} bpm)")
-
-    # ปรับตามปัจจัยอายุและโรคประจำตัว
-    if profile["age"] >= 70:
-        risk_score += 10
-        findings.append("ผู้ป่วยสูงอายุ มีความเสี่ยงต่อการทรุดตัวรวดเร็ว")
-
-    risk_score = min(risk_score, 100)
-
-    if risk_score >= 70:
-        risk_level = "DEMO_RULE_HIGH"
-        ai_summary = f" กฎสาธิตพบค่าที่ควรตรวจสอบในผู้ป่วยกลุ่ม {profile['condition']} ({' / '.join(findings)})"
-    elif risk_score >= 40:
-        risk_level = "DEMO_RULE_MEDIUM"
-        ai_summary = f" กฎสาธิตแนะนำให้ตรวจสอบ: พบความผิดปกติเบื้องต้น ({' / '.join(findings)})"
+    if news2.get("abstain"):
+        risk_level = "ABSTAIN"
+        risk_score = None
+        ai_summary = f"งดประเมินผล AI: {news2.get('label_th', 'ข้อมูลไม่ผ่านเกณฑ์คุณภาพ')}"
+        recommendations.append("ตรวจสอบการติดหัววัดและสายสัญญาณข้างเตียง")
     else:
-        risk_level = "DEMO_RULE_LOW (ไม่ใช่การรับรองความปลอดภัย)"
-        ai_summary = f" กฎสาธิต: ค่าที่บันทึกยังไม่ข้ามเกณฑ์แจ้งเตือน ต้องพิจารณาร่วมกับข้อมูลทางคลินิก"
-        recommendations.append("บันทึกสัญญาณชีพตามรอบปกติ")
+        level = news2.get("level", "LOW")
+        total = news2.get("total", 0)
+        risk_score = total
+        if level == "HIGH":
+            risk_level = "MODIFIED_NEWS2_HIGH"
+            findings.append(f"คะแนน Modified NEWS2 รวม {total} (ความเสี่ยงสูง / High Urgency)")
+            recommendations.append("แจ้งแพทย์และพยาบาลประเมินผู้ป่วยทันที")
+        elif level == "MEDIUM":
+            risk_level = "MODIFIED_NEWS2_MEDIUM"
+            findings.append(f"คะแนน Modified NEWS2 รวม {total} (ความเสี่ยงปานกลาง / Medium Urgency)")
+            recommendations.append("ติดตามสัญญาณชีพอย่างใกล้ชิดและตรวจซ้ำตามรอบ")
+        else:
+            risk_level = "MODIFIED_NEWS2_LOW"
+            findings.append(f"คะแนน Modified NEWS2 รวม {total} (ความเสี่ยงต่ำ / Low Urgency)")
+            recommendations.append("ติดตามสัญญาณชีพตามรอบปกติ")
+        ai_summary = f"การประเมิน Modified NEWS2 (คะแนนรวม {total}): {findings[0]} — สำหรับช่วยสนับสนุนการตัดสินใจเบื้องต้น ไม่ใช่การวินิจฉัยทางการแพทย์"
 
     return {
         "risk_score": risk_score,
@@ -628,6 +675,7 @@ def generate_ai_assessment(patient_id: str, history_rows: list):
 class ConnectionManager:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
+        self._auth_cache: dict[WebSocket, tuple[str | None, set[str] | None, float]] = {}
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
@@ -636,16 +684,26 @@ class ConnectionManager:
     def disconnect(self, websocket: WebSocket):
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
+        self._auth_cache.pop(websocket, None)
 
     async def broadcast(self, message: dict):
+        now = time.time()
         async def send(connection):
             try:
-                subject = await asyncio.to_thread(auth.identity, connection.cookies, 'staff')
-                if not subject:
-                    await connection.close(code=4401)
-                    self.disconnect(connection)
-                    return
-                if message.get('patient_id') and not await asyncio.to_thread(auth.can_access_patient, subject, message['patient_id']):
+                cached = self._auth_cache.get(connection)
+                if not cached or (now - cached[2]) > 15.0:
+                    subject = await asyncio.to_thread(auth.identity, connection.cookies, 'staff')
+                    if not subject:
+                        await connection.close(code=4401)
+                        self.disconnect(connection)
+                        return
+                    scope = await asyncio.to_thread(auth.staff_patient_scope, subject)
+                    scope_set = set(scope) if scope is not None else None
+                    self._auth_cache[connection] = (subject, scope_set, now)
+                else:
+                    subject, scope_set, _ = cached
+                target_pid = message.get('patient_id')
+                if target_pid and scope_set is not None and target_pid.upper() not in scope_set:
                     return
                 await asyncio.wait_for(connection.send_json(message), timeout=.5)
             except Exception:
@@ -805,16 +863,68 @@ async def run_agent_worker() -> None:
         finally:
             agent_queue.task_done()
 
+import ssl
+
 BROKER = os.getenv("MQTT_BROKER", "localhost")
 PORT = int(os.getenv("MQTT_PORT", "8083"))
+MQTT_TRANSPORT = os.getenv("MQTT_TRANSPORT", "websockets")
 TOPIC = os.getenv("MQTT_TOPIC", "my_ai_hospital/vitals")
 BEDSIDE_TOPIC = os.getenv("WARD_BEDSIDE_TOPIC", "my_ai_hospital/bedside")
 BEDSIDE_MQTT_ENABLED = os.getenv(
     "WARD_BEDSIDE_MQTT_ENABLED", "1" if INGEST_MODE == "mqtt" else "0"
 ) == "1"
 
-mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, transport="websockets")
+
+def configure_mqtt_client_security(client: mqtt.Client, env: dict | None = None) -> bool:
+    source = env if env is not None else os.environ
+    mqtt_username = (source.get("MQTT_USERNAME") or "").strip()
+    mqtt_password = source.get("MQTT_PASSWORD") or ""
+    raw_tls = (source.get("MQTT_TLS_ENABLED") or "").strip().lower()
+    raw_port = str(source.get("MQTT_PORT", PORT)).strip()
+    try:
+        port_value = int(raw_port)
+    except ValueError:
+        port_value = PORT
+
+    if raw_tls in {"true", "1", "yes"}:
+        tls_enabled = True
+    elif raw_tls in {"false", "0", "no"}:
+        tls_enabled = False
+    else:
+        tls_enabled = port_value in {8883, 8084}
+
+    mqtt_ca_cert = (source.get("MQTT_CA_CERT") or "").strip()
+    mqtt_tls_insecure = (source.get("MQTT_TLS_INSECURE") or "").strip().lower() in {"true", "1", "yes"}
+
+    if mqtt_username:
+        client.username_pw_set(mqtt_username, mqtt_password or None)
+
+    if tls_enabled:
+        try:
+            client.tls_set(
+                ca_certs=mqtt_ca_cert if mqtt_ca_cert else None,
+                tls_version=ssl.PROTOCOL_TLS_CLIENT,
+            )
+        except ValueError:
+            pass
+        if mqtt_tls_insecure:
+            client.tls_insecure_set(True)
+
+    return tls_enabled
+
+
+mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, transport=MQTT_TRANSPORT)
+configure_mqtt_client_security(mqtt_client)
 mqtt_client.on_message = on_message
+
+async def run_retention_loop():
+    while True:
+        try:
+            await asyncio.to_thread(cleanup_old_logs)
+        except Exception as e:
+            print(f"[PDPA Retention] Periodic cleanup error: {e}")
+        await asyncio.sleep(3600)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -836,7 +946,8 @@ async def lifespan(app: FastAPI):
     agent_last_enqueue.clear()
     jobs = [asyncio.create_task(run_agent_worker()), asyncio.create_task(run_bedside_worker()),
             asyncio.create_task(run_bedside_watchdog()), asyncio.create_task(notifications.run_dispatcher()),
-            asyncio.create_task(care_api.run_scheduler()), asyncio.create_task(daily_summary.run_daily())]
+            asyncio.create_task(care_api.run_scheduler()), asyncio.create_task(daily_summary.run_daily()),
+            asyncio.create_task(run_retention_loop())]
     if auth.test_accounts_enabled():
         jobs.append(asyncio.create_task(TestPatientSimulator(DB_NAME).run()))
     mqtt_started = False
@@ -852,6 +963,7 @@ async def lifespan(app: FastAPI):
                     if BEDSIDE_MQTT_ENABLED:
                         topics.append((BEDSIDE_TOPIC, 0))
                     client.subscribe(topics)
+            configure_mqtt_client_security(mqtt_client)
             mqtt_client.on_connect = subscribe
             mqtt_client.connect_async(BROKER, PORT, 60)
             mqtt_client.loop_start()
@@ -883,14 +995,6 @@ app.include_router(bedside_monitor.router)
 app.include_router(agent_scenarios.router)
 
 
-@app.get('/api/care-chat/unread-summary')
-def care_chat_unread_summary(request: Request):
-    subject = getattr(getattr(request, 'state', None), 'subject', None)
-    summary = care_chat.count_unread_by_patient(subject)
-    total = sum(summary.values())
-    return {'summary': summary, 'total_unread': total, 'unread_by_patient': summary}
-
-
 @app.get('/api/care/tasks/{task_id}/history')
 def care_task_history_endpoint(task_id: int, request: Request):
     with closing(care_api.connect()) as conn:
@@ -915,14 +1019,14 @@ def care_overdue_summary_endpoint(request: Request, patient_id: str | None = Non
     clean_pid = patient_id.strip() if patient_id and patient_id.strip() else None
     if clean_pid and subject and not auth.can_access_patient(subject, clean_pid):
         raise HTTPException(403, 'บัญชีนี้ไม่ได้รับมอบหมายให้ดูแลผู้ป่วยรายนี้')
-    return care_plan.overdue_care_summary(patient_id=clean_pid)
+    return care_plan.overdue_care_summary(patient_id=clean_pid, auth_identity=subject)
 
 
 @app.get('/api/operations/shift-handoff')
 def shift_handoff_endpoint(request: Request):
     subject = getattr(getattr(request, 'state', None), 'subject', None)
     now = time.time()
-    care_summary = care_plan.overdue_care_summary()
+    care_summary = care_plan.overdue_care_summary(auth_identity=subject)
     unread_map = care_chat.count_unread_by_patient(subject)
     total_unread = sum(unread_map.values())
     chat_summary = {
@@ -931,7 +1035,7 @@ def shift_handoff_endpoint(request: Request):
         'summary': unread_map,
     }
     open_alerts_count = 0
-    with closing(sqlite3.connect(DB_NAME, timeout=10)) as conn:
+    with closing(db_connect()) as conn:
         if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_alerts'").fetchone():
             clause, values = auth.scoped_sql()
             cols = {r[1] for r in conn.execute('PRAGMA table_info(agent_alerts)')}
@@ -952,12 +1056,16 @@ def shift_handoff_endpoint(request: Request):
 @app.get('/api/operations/status')
 def operations_status(request: Request):
     from contextlib import closing
-    with closing(sqlite3.connect(DB_NAME, timeout=10)) as conn:
+    subject = getattr(getattr(request, 'state', None), 'subject', None)
+    chat_allowed = auth.is_chat_enabled_for_staff(subject)
+    with closing(db_connect()) as conn:
         clause, values = auth.scoped_sql()
         new_alerts = conn.execute("SELECT COUNT(*) FROM agent_alerts WHERE status='NEW' AND merged_into IS NULL AND " + clause, values).fetchone()[0]
-        messages = conn.execute("SELECT COUNT(*) FROM care_messages WHERE state='NEW' AND " + clause, values).fetchone()[0]
-        scope = auth.staff_patient_scope(request.state.subject)
-        if scope is None:
+        messages = 0 if not chat_allowed else conn.execute("SELECT COUNT(*) FROM care_messages WHERE state='NEW' AND " + clause, values).fetchone()[0]
+        scope = auth.staff_patient_scope(subject)
+        if not chat_allowed:
+            chat_unread = 0
+        elif scope is None:
             chat_unread = conn.execute("SELECT COUNT(*) FROM care_chat_messages WHERE sender_audience='patient' AND read_by_staff_at IS NULL").fetchone()[0]
         elif not scope:
             chat_unread = 0
@@ -974,7 +1082,8 @@ def operations_status(request: Request):
         bedside = {'devices': {}, 'ground_truth_labels': 0, 'posture_observations': 0, 'posture_model': 'SCOPED_VIEW'}
     return {'fresh_beds': worker['fresh_beds'], 'total_beds': len(registry),
             'worker': worker['status'], 'new_alerts': new_alerts, 'unclaimed_messages': messages,
-            'chat_unread': chat_unread,
+            'chat_unread': chat_unread, 'chat_enabled': chat_allowed,
+            'role_type': auth.staff_role_type(subject),
             'push_ready': notifications.configuration()['ready'], 'named_login': not auth.demo_login_enabled(),
             'secure_cookie': os.getenv('WARD_COOKIE_SECURE') == '1', 'bedside': bedside}
 
@@ -1004,8 +1113,15 @@ def get_patient_details(patient_id: str):
     profile = get_patient_profile(patient_id)
     if profile is None:
         raise HTTPException(status_code=404, detail="Patient ID not found in the synthetic registry")
+    actor = auth.request_staff_subject.get() or "staff"
+    auth._log_security_audit(
+        patient_id,
+        "PATIENT_DATA_VIEWED",
+        actor,
+        f"Staff {actor} accessed full clinical details for {patient_id}",
+    )
     
-    conn = sqlite3.connect(DB_NAME)
+    conn = db_connect()
     cursor = conn.cursor()
     cursor.execute(
         """SELECT heart_rate, spo2, status, timestamp, respiratory_rate,
@@ -1111,6 +1227,7 @@ def list_patients(zone: str | None = None, search: str = "", page: int = 1, page
             or query in profile["room_number"].lower()
             or query in profile["name"].lower()
             or query in profile["condition"].lower()
+            or query in profile.get("doctor", "").lower()
         ]
     profiles.sort(key=lambda profile: profile["patient_id"])
     start = (page - 1) * page_size
@@ -1124,6 +1241,7 @@ def list_patients(zone: str | None = None, search: str = "", page: int = 1, page
         "condition": profile["condition"],
         "mobility": profile["mobility"],
         "doctor": profile["doctor"],
+        "assigned_staff_id": profile.get("assigned_staff_id", ""),
     } for profile in profiles[start:start + page_size]]
     return {
         "registered_patient_count": len(registry),
@@ -1165,7 +1283,7 @@ class AlertWorkflowUpdate(BaseModel):
 def update_workflow_alert(alert_id: int, update: AlertWorkflowUpdate, request: Request):
     """Move a persisted alert through a human-approved workflow state."""
     requested_status = update.status.upper()
-    conn = sqlite3.connect(DB_NAME)
+    conn = db_connect()
     conn.execute("BEGIN IMMEDIATE")
     cursor = conn.cursor()
     cursor.execute("""
@@ -1237,7 +1355,7 @@ def patient_timeline(patient_id: str, limit: int = 80):
 @app.get("/api/agent/audit")
 def list_agent_audit(patient_id: str | None = None, limit: int = 100):
     limit = min(max(limit, 1), 200)
-    conn = sqlite3.connect(DB_NAME)
+    conn = db_connect()
     cursor = conn.cursor()
     if patient_id:
         normalized_patient_id = patient_id.upper()
@@ -1284,16 +1402,20 @@ class ChatMessage(BaseModel):
 
 @app.post("/api/patient/{patient_id}/chat")
 async def patient_chat_api(patient_id: str, request: ChatMessage):
+    actor = auth.request_staff_subject.get()
+    if actor and not auth.is_chat_enabled_for_staff(actor):
+        auth._log_security_audit(patient_id.upper(), "UNAUTHORIZED_CHAT_ACCESS", actor, "Central role blocked from patient chat endpoint")
+        raise HTTPException(status_code=403, detail="บัญชีศูนย์กลาง (Central Console) ไม่มีระบบแชท")
     patient_id = patient_id.upper()
     profile = get_patient_profile(patient_id)
     if profile is None:
         raise HTTPException(status_code=404, detail="Patient ID not found in the synthetic registry")
     
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("SELECT heart_rate, spo2 FROM vital_logs WHERE patient_id = ? ORDER BY id DESC LIMIT 30", (patient_id,))
-    rows = cursor.fetchall()
-    conn.close()
+    def _fetch_chat_rows(pid):
+        with closing(db_connect()) as conn:
+            return conn.execute("SELECT heart_rate, spo2 FROM vital_logs WHERE patient_id = ? ORDER BY id DESC LIMIT 30", (pid,)).fetchall()
+
+    rows = await asyncio.to_thread(_fetch_chat_rows, patient_id)
     
     # ส่งข้อความและข้อมูลผู้ป่วยไปให้ Gemini คิดคำตอบ
     # Gemini is a blocking network request. Keep it off FastAPI's event loop so
@@ -1323,7 +1445,7 @@ def create_care_request(patient_id: str, payload: CareRequest, request: Request)
     if get_patient_profile(patient_id) is None:
         raise HTTPException(status_code=404, detail="Patient ID not found in the synthetic registry")
     requested_at = time.time()
-    conn = sqlite3.connect(DB_NAME)
+    conn = db_connect()
     cursor = conn.cursor()
     cursor.execute(
         """INSERT INTO care_requests (patient_id, request_type, status, note, requested_at)
@@ -1400,20 +1522,32 @@ async def dashboard_section(section: str):
 
 
 @app.get("/api/reports/{section}/text", response_class=PlainTextResponse)
-async def download_report_text(section: str):
+async def download_report_text(section: str, include_ai_narrative: bool = False):
     if section not in VALID_DASHBOARD_SECTIONS:
         raise HTTPException(status_code=404, detail="Unknown report section")
     snapshot = await asyncio.to_thread(get_dashboard_snapshot)
-    ai_summary = await asyncio.to_thread(summarize_dashboard_section, section, snapshot)
+    if include_ai_narrative and os.getenv("WARD_DASHBOARD_LLM", "0") == "1":
+        ai_summary = await asyncio.to_thread(summarize_dashboard_section, section, snapshot)
+    else:
+        ai_summary = (
+            "สรุปอัตโนมัติในเครื่อง: " + str(snapshot.get("registered_patient_count", 60)) + " เตียงในทะเบียนสาธิต "
+            "· สรุปข้อมูลเชิงโครงสร้างตามรอบการบันทึก"
+        )
     return format_dashboard_text(section, snapshot, ai_summary)
 
 
 @app.get("/api/reports/{section}/document")
-async def download_report_document(section: str):
+async def download_report_document(section: str, include_ai_narrative: bool = False):
     if section not in VALID_DASHBOARD_SECTIONS:
         raise HTTPException(status_code=404, detail="Unknown report section")
     snapshot = await asyncio.to_thread(get_dashboard_snapshot)
-    ai_summary = await asyncio.to_thread(summarize_dashboard_section, section, snapshot)
+    if include_ai_narrative and os.getenv("WARD_DASHBOARD_LLM", "0") == "1":
+        ai_summary = await asyncio.to_thread(summarize_dashboard_section, section, snapshot)
+    else:
+        ai_summary = (
+            "สรุปอัตโนมัติในเครื่อง: " + str(snapshot.get("registered_patient_count", 60)) + " เตียงในทะเบียนสาธิต "
+            "· สรุปข้อมูลเชิงโครงสร้างตามรอบการบันทึก"
+        )
     try:
         document = await asyncio.to_thread(create_report_docx, section, snapshot, ai_summary)
     except RuntimeError as error:
@@ -1427,7 +1561,8 @@ async def download_report_document(section: str):
 
 @app.websocket("/ws/vitals")
 async def websocket_endpoint(websocket: WebSocket):
-    if not auth.identity(websocket.cookies, "staff") or websocket.headers.get("origin") not in auth.ORIGINS["staff"]:
+    identity = await asyncio.to_thread(auth.identity, websocket.cookies, "staff")
+    if not identity or websocket.headers.get("origin") not in auth.ORIGINS["staff"]:
         await websocket.close(code=4401)
         return
     await manager.connect(websocket)

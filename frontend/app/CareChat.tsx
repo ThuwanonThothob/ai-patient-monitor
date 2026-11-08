@@ -101,22 +101,32 @@ const patientQuickChat = [
 export default function CareChat({
   staff = false,
   openPatient,
+  initialPatientId,
 }: {
   staff?: boolean;
   openPatient?: (id: string) => void;
+  initialPatientId?: string;
 }) {
   const conversations = usePatientResource<{ conversations: Conversation[] }>(
     staff ? '/api/care-chat/conversations' : null,
     5000,
     true
   );
-  const [selected, setSelected] = useState('');
+  const [selected, setSelected] = useState(() => {
+    if (initialPatientId) return initialPatientId;
+    if (typeof window !== 'undefined') {
+      const p = new URLSearchParams(window.location.search).get('patient');
+      if (p) return p;
+    }
+    return '';
+  });
   const [search, setSearch] = useState('');
   const [filterTab, setFilterTab] = useState<'all' | 'unread'>('all');
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const previousUnread = useRef<number | null>(null);
   const unread =
     conversations.data?.conversations.reduce((sum, item) => sum + item.unread, 0) ?? 0;
+  const activeSelection = selected || initialPatientId || '';
 
   useEffect(() => {
     if (unread === undefined) return;
@@ -126,10 +136,19 @@ export default function CareChat({
     previousUnread.current = unread;
   }, [staff, unread]);
 
+  if (staff && conversations.error && conversations.error.includes('ไม่มีระบบแชท')) {
+    return (
+      <section className={s.chat + ' ' + s.chooseRoom} aria-live="polite">
+        <h2>บัญชีศูนย์กลาง (Central Console) ไม่มีระบบแชท</h2>
+        <p>บัญชีศูนย์กลางใช้สำหรับเฝ้าระวังภาพรวมและตรวจสอบแพทย์ผู้รับผิดชอบของทุกเตียงเท่านั้น ไม่เปิดช่องทางสนทนารายบุคคล</p>
+      </section>
+    );
+  }
+
   const selectedPatient = conversations.data?.conversations.some(
-    item => item.patient_id === selected
+    item => item.patient_id === activeSelection
   )
-    ? selected
+    ? activeSelection
     : '';
   const roomKey = staff ? selectedPatient : 'me';
 
@@ -149,8 +168,8 @@ export default function CareChat({
   ) : (
     <section className={s.chat + ' ' + s.chooseRoom}>
       <div className={s.avatarWrapper}>
-        <div className={s.avatar} style={{ background: '#0084ff', margin: '0 auto' }}>
-          💬
+        <div className={s.avatar} style={{ background: '#0084ff', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         </div>
       </div>
       <h2>เลือกผู้ป่วยเพื่อเปิดบทสนทนา</h2>
@@ -270,7 +289,7 @@ export default function CareChat({
                   </div>
                   <div className={s.roomSubtitleRow}>
                     <span className={`${s.roomSnippet} ${hasDraft ? s.roomDraft : ''}`}>
-                      {hasDraft ? '✏️ ' : ''}{snippet}
+                      {hasDraft ? '[ร่าง] ' : ''}{snippet}
                     </span>
                     {item.unread > 0 && (
                       <span className={s.unreadBadge} aria-label={`ยังไม่อ่าน ${item.unread}`}>
@@ -463,7 +482,7 @@ function ChatRoomPanel({
 
       <details className={s.learnMoreDrawer}>
         <summary className={s.learnMoreSummary}>
-          <span>👥 ข้อมูลผู้เข้าร่วมบทสนทนาและความเป็นส่วนตัว (Learn More)</span>
+          <span>ข้อมูลผู้เข้าร่วมบทสนทนาและความเป็นส่วนตัว (Learn More)</span>
           <span className={s.learnMoreBadge}>ดูข้อมูลห้องแชท</span>
         </summary>
         <div className={s.learnMoreBody}>

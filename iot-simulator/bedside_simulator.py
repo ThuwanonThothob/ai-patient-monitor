@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import re
+import ssl
 import threading
 import time
 import zlib
@@ -23,6 +24,42 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_ROOT = ROOT / 'backend' / 'models' / 'posture'
 load_dotenv(ROOT / 'backend' / '.env', override=False)
+
+
+def _default_tls_enabled(port: int) -> bool:
+    raw = (os.getenv('MQTT_TLS_ENABLED') or '').strip().lower()
+    if raw in {'true', '1', 'yes'}:
+        return True
+    if raw in {'false', '0', 'no'}:
+        return False
+    return port in {8883, 8084}
+
+
+def configure_simulator_mqtt_security(
+    client: mqtt.Client,
+    *,
+    port: int,
+    username: str | None = None,
+    password: str | None = None,
+    tls_enabled: bool | None = None,
+    ca_cert: str | None = None,
+) -> bool:
+    resolved_user = (username if username is not None else (os.getenv('MQTT_USERNAME') or '')).strip()
+    resolved_pass = password if password is not None else (os.getenv('MQTT_PASSWORD') or '')
+    resolved_ca = (ca_cert if ca_cert is not None else (os.getenv('MQTT_CA_CERT') or '')).strip()
+    resolved_tls = tls_enabled if tls_enabled is not None else _default_tls_enabled(port)
+    tls_insecure = (os.getenv('MQTT_TLS_INSECURE') or '').strip().lower() in {'true', '1', 'yes'}
+
+    if resolved_user:
+        client.username_pw_set(resolved_user, resolved_pass or None)
+    if resolved_tls:
+        client.tls_set(
+            ca_certs=resolved_ca if resolved_ca else None,
+            tls_version=ssl.PROTOCOL_TLS_CLIENT,
+        )
+        if tls_insecure:
+            client.tls_insecure_set(True)
+    return resolved_tls
 
 
 def verified_case(posture: str) -> tuple[list[list[float]], str, str]:
@@ -69,7 +106,16 @@ def publish(client: mqtt.Client, topic: str, payload: dict) -> None:
 
 
 def run(args: argparse.Namespace) -> None:
-    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, transport='websockets')
+    transport = os.getenv('MQTT_TRANSPORT', 'websockets')
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, transport=transport)
+    configure_simulator_mqtt_security(
+        client,
+        port=args.port,
+        username=getattr(args, 'mqtt_username', None),
+        password=getattr(args, 'mqtt_password', None),
+        tls_enabled=getattr(args, 'tls', None),
+        ca_cert=getattr(args, 'ca_cert', None),
+    )
     connected = threading.Event()
     failure: list[str] = []
     def on_connect(client, userdata, flags, reason_code, properties):
@@ -128,6 +174,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--broker', default=os.getenv('MQTT_BROKER', 'localhost'))
     parser.add_argument('--port', type=int, default=int(os.getenv('MQTT_PORT', '8083')))
     parser.add_argument('--topic', default=os.getenv('WARD_BEDSIDE_TOPIC', 'my_ai_hospital/bedside'))
+    parser.add_argument('--mqtt-username', default=(os.getenv('MQTT_USERNAME') or '').strip())
+    parser.add_argument('--mqtt-password', default=os.getenv('MQTT_PASSWORD') or '')
+    parser.add_argument('--tls', action='store_true', default=None)
+    parser.add_argument('--ca-cert', default=(os.getenv('MQTT_CA_CERT') or '').strip())
     parser.add_argument('--scenario', choices=('single', 'demo'), default='demo')
     parser.add_argument('--patient', default='A001')
     parser.add_argument('--kind', choices=('vital', 'pressure_mat'), default='vital')

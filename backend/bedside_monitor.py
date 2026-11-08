@@ -39,6 +39,8 @@ _service: 'BedsideService | None' = None
 
 def connect(database: str) -> sqlite3.Connection:
     conn = sqlite3.connect(database, timeout=15)
+    conn.execute("PRAGMA busy_timeout = 15000")
+    conn.execute("PRAGMA journal_mode = WAL")
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -310,10 +312,16 @@ class BedsideService:
                 row = conn.execute('SELECT patient_id FROM bedside_posture_observations WHERE id=?', (observation_id,)).fetchone()
                 if not row or row['patient_id'] != patient_id:
                     raise ValueError('observation does not belong to patient')
+            now_ts = time.time()
             conn.execute('''INSERT OR IGNORE INTO bedside_ground_truth
                 (request_key,patient_id,observation_id,label_type,label,notes,recorded_by,observed_at,created_at)
                 VALUES (?,?,?,?,?,?,?,?,?)''', (request_key, patient_id, observation_id, label_type,
-                label, notes[:500], actor, float(at), time.time()))
+                label, notes[:500], actor, float(at), now_ts))
+            try:
+                conn.execute('''INSERT INTO agent_audit_logs (patient_id, action, actor, detail, created_at)
+                    VALUES (?,?,?,?,?)''', (patient_id, 'BEDSIDE_GROUND_TRUTH_RECORDED', actor, f'{label_type}:{label}', now_ts))
+            except sqlite3.OperationalError:
+                pass
             row = conn.execute('SELECT * FROM bedside_ground_truth WHERE request_key=?', (request_key,)).fetchone()
         return dict(row)
 

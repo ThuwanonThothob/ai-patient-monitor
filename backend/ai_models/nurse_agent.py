@@ -14,11 +14,14 @@ import math
 from pathlib import Path
 import re
 import sqlite3
+import tempfile
 import time
 from typing import Any
 
 from .agent_workflow import VitalAlertAgent, VitalEvent
+from .anomaly import check_vital_quality_gate
 from .care_team import owner_for_step, team_manifest
+from .news2 import calculate_modified_news2
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,7 +30,9 @@ OPEN_ALERTS = ("NEW", "ACKNOWLEDGED", "ESCALATED")
 
 
 def connect(database: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(database, timeout=10)
+    conn = sqlite3.connect(database, timeout=15)
+    conn.execute("PRAGMA busy_timeout = 15000")
+    conn.execute("PRAGMA journal_mode = WAL")
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -102,8 +107,10 @@ def _recent_open_alert(conn: sqlite3.Connection, patient_id: str, severity: str,
 class NurseAgent:
     """Tool-using state machine for continuous, non-clinical workflow support."""
 
-    def __init__(self, database: str, *, trace_interval_seconds: int = 600,
+    def __init__(self, database: str | None = None, *, trace_interval_seconds: int = 600,
                  alert_cooldown_seconds: int = 60) -> None:
+        if database is None:
+            database = str(Path(tempfile.gettempdir()) / "nurse_agent_default.db")
         self.database = database
         self.trace_interval_seconds = max(10, trace_interval_seconds)
         self.alert_cooldown_seconds = max(1, alert_cooldown_seconds)
@@ -120,14 +127,47 @@ class NurseAgent:
                 processed_events=0,alert_proposals=0,last_error=NULL,model_version='care-agent-team-v1' WHERE id=1""",
                 (now, now))
 
+    def triage_vital_signs(
+        self,
+        patient_id: str,
+        hr: float | None,
+        spo2: float | None,
+        rr: float | None = None,
+    ) -> str:
+        """Triage vital signs using quality gate and deterministic Modified NEWS2 rules."""
+        gate = check_vital_quality_gate(hr, spo2, respiratory_rate=rr)
+        if gate.abstain:
+            return "ABSTAIN_INVALID_DATA"
+        news2 = calculate_modified_news2(hr, spo2, rr)
+        if (
+            spo2 < 90
+            or hr > 120
+            or hr < 50
+            or (rr is not None and (rr <= 8 or rr >= 25))
+            or news2["level"] == "HIGH"
+        ):
+            return "CRITICAL"
+        if spo2 < 94 or hr < 60 or hr > 100 or news2["level"] == "MEDIUM":
+            return "WARNING"
+        return "NORMAL"
+
     def process(self, event: VitalEvent, *, now: float | None = None) -> dict[str, Any]:
         now = time.time() if now is None else now
         age = now - event.timestamp if _finite(event.timestamp) else math.inf
-        valid = (_finite(event.heart_rate) and _finite(event.spo2)
-                 and 20 <= event.heart_rate <= 250 and 1 <= event.spo2 <= 100)
+        gate = check_vital_quality_gate(
+            event.heart_rate,
+            event.spo2,
+            respiratory_rate=event.respiratory_rate,
+        )
+        valid = not gate.abstain
         fresh = -5 <= age <= 15
         model_fresh = (event.analysis_status == "READY" and _finite(event.evaluated_at)
                        and -5 <= now - float(event.evaluated_at) <= 30)
+        news2 = (
+            calculate_modified_news2(event.heart_rate, event.spo2, event.respiratory_rate)
+            if valid
+            else calculate_modified_news2(None, None, None)
+        )
 
         # A stale anomaly must never create a new clinical review proposal.
         from dataclasses import replace
@@ -219,7 +259,8 @@ class NurseAgent:
                 (now, int(bool(proposal))))
 
         return {"run_id": run_id, "decision": decision, "summary": summary,
-                "alert": proposal, "requires_human_review": bool(proposal)}
+                "alert": proposal, "requires_human_review": bool(proposal),
+                "abstain": not (valid and fresh), "modified_news2": news2}
 
     def record_failure(self, error: Exception) -> None:
         with closing(connect(self.database)) as conn, conn:

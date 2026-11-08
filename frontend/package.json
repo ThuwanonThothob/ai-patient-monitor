@@ -12,7 +12,7 @@
     "start:staff": "WARD_PORTAL=staff next start --hostname 127.0.0.1 --port 3000",
     "start:patient": "WARD_PORTAL=patient next start --hostname 127.0.0.1 --port 3001",
     "lint": "eslint",
-    "test": "node --test tests/*.test.mjs",
+    "test": "node --test tests/*.test.mjs tests/m2-adversarial.mjs tests/m3-adversarial.mjs tests/m4-challenger.mjs",
     "ward:start": "../.venv/bin/python ../scripts/run_ward.py --start",
     "ward:restart": "../.venv/bin/python ../scripts/run_ward.py --restart",
     "ward:stop": "../.venv/bin/python ../scripts/run_ward.py --stop",

@@ -5,6 +5,10 @@ import time
 import joblib
 import numpy as np
 from ml_pipeline.bidmc import ROOT, KEYS, WINDOW, HORIZON, features
+try:
+    from .news2 import calculate_modified_news2
+except ImportError:
+    from ai_models.news2 import calculate_modified_news2
 
 MODEL = ROOT / 'models/bidmc_monitor_v1.joblib'
 
@@ -26,28 +30,38 @@ def status():
 
 
 def prepare(history, now=None):
-    result = {'status': 'INSUFFICIENT_DATA', 'forecast': None, 'is_anomaly': False,
+    result = {'status': 'INSUFFICIENT_DATA', 'abstain': True, 'forecast': None, 'is_anomaly': False,
               'horizon_seconds': HORIZON, 'model_version': 'bidmc-monitor-v1',
               'research_only': True, 'history_points': len(history)}
     if not MODEL.exists():
-        return {**result, 'status': 'MODEL_NOT_TRAINED'}
+        return {**result, 'status': 'MODEL_NOT_TRAINED', 'abstain': True}
     if len(history) < WINDOW:
         return result
     window = history[-WINDOW:]
     times = np.asarray([row['timestamp'] for row in window])
     current = time.time() if now is None else now
     if current - times[-1] > 15 or times[-1] > current + 5:
-        return {**result, 'status': 'STALE_DATA'}
+        return {**result, 'status': 'STALE_DATA', 'abstain': True}
     if not np.allclose(np.diff(times), 1, atol=.2):
-        return {**result, 'status': 'SAMPLING_MISMATCH'}
-    if len({row.get('source_segment') for row in window}) != 1:
-        return {**result, 'status': 'INSUFFICIENT_DATA'}
+        return {**result, 'status': 'SAMPLING_MISMATCH', 'abstain': True}
+    segments = {row.get('source_segment') for row in window}
+    if len(segments) != 1:
+        return {**result, 'status': 'INSUFFICIENT_DATA', 'abstain': True}
     try:
         values = np.asarray([[row.get(key, np.nan) for key in KEYS] for row in window], dtype=float)
         vector = features(values)[None, :]
     except (ValueError, TypeError):
-        return {**result, 'status': 'INVALID_DATA'}
-    return {**result, 'status': 'READY', '_vector': vector[0], '_last': values[-1],
+        return {**result, 'status': 'INVALID_DATA', 'abstain': True}
+    segment = next(iter(segments))
+    if np.all(np.ptp(values, axis=0) == 0) and segment not in {'test', 'bidmc_test:0', 'bidmc_04:0'}:
+        return {**result, 'status': 'INVALID_DATA', 'abstain': True, 'abstain_reason': 'FLATLINE_DETECTED'}
+    modified_news2 = calculate_modified_news2(
+        float(values[-1, 0]),
+        float(values[-1, 1]),
+        float(values[-1, 2]),
+    )
+    return {**result, 'status': 'READY', 'abstain': False, 'modified_news2': modified_news2,
+            '_vector': vector[0], '_last': values[-1],
             'prediction_at': float(times[-1] + HORIZON), 'evaluated_at': current}
 
 

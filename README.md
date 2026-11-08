@@ -4,9 +4,129 @@
 · [รายงานตรวจระบบ 17 ตุลาคม 2569](docs/PROJECT_REVIEW_2026-10-17.md)
 
 60 synthetic bed records: A001–A020, B001–B020, C001–C020. This is a research
-prototype, **not a clinically validated medical device**. The patient profiles
+prototype, **not a clinically validated medical device (Not SaMD)**. The patient profiles
 (conditions, blood group, glucose, sleep, cholesterol and ECG descriptions) are
 synthetic, not labels or measurements supplied by the research dataset.
+See [Limitations & Responsible Use](docs/CLINICAL_VALIDATION_REPORT.md#9-limitations--responsible-use-ข้อจำกัดและการใช้งานอย่างมีความรับผิดชอบ)
+for regulatory status, data provenance, sensor-grade caveats, and safe fallbacks.
+
+---
+
+## 🌟 สรุปภาพรวมโครงการ นวัตกรรม และสถาปัตยกรรมระบบ (Project Architecture & Ecosystem)
+
+ระบบ **Smart Ward & AI Patient Monitor** เป็นแพลตฟอร์มเฝ้าระวังผู้ป่วยและสนับสนุนการตัดสินใจทางคลินิก (Clinical Decision Support - Not SaMD) สำหรับหอผู้ป่วย 60 เตียง โดยออกแบบตามหลัก **ความปลอดภัยทางคลินิกสูงสุด (Clinical Safety First)** มุ่งเน้นความโปร่งใส ปราศจากการเดาค่าสุ่มสี่สุ่มห้า (Fail-Safe Abstention) และผสานการทำงานระหว่าง AI กับมนุษย์ (Human-in-the-Loop)
+
+```mermaid
+flowchart TD
+    subgraph SENSORS["1. อุปกรณ์ข้างเตียง & IoT Telemetry"]
+        D1["Pulse Oximeter (SpO2 & HR @ 1Hz)"]
+        D2["Respiratory Sensor (RR @ 1Hz)"]
+        D3["Smart In-Bed Pressure Mat (32x64 Grid)"]
+        GW["Bedside Telemetry Hub & Gateway"]
+        D1 --> GW
+        D2 --> GW
+        D3 --> GW
+    end
+
+    subgraph INGESTION["2. การรับข้อมูล & Data Quality Gate"]
+        GW -->|"MQTT / WebSocket (1Hz)"| QG{"Data Quality Gate & Check"}
+        QG -->|"ข้อมูลขาด / หลุดช่วงสรีรวิทยา"| ABSTAIN["Fail-Safe Abstention Mode (งดสรุปผล AI)"]
+        QG -->|"ข้อมูลสมบูรณ์ต่อเนื่อง 60 วินาที"| PIPE["Valid 1Hz Window Buffer"]
+    end
+
+    subgraph AI_MODELS["3. AI Model Engine & การประเมินทางคลินิก"]
+        PIPE --> RF["Random Forest Regressor (พยากรณ์ HR, RR ล่วงหน้า 30s)"]
+        PIPE --> PERSIST["Persistence Baseline (ทำนาย SpO2 ล่วงหน้า 30s)"]
+        PIPE --> IF["Isolation Forest (ตรวจจับแพทเทิร์นผิดปกติ Unsupervised)"]
+        D3 --> PM["Spatial Pooling (8x16) + Logistic Regression (จำแนกท่านอน)"]
+        PIPE --> NEWS2["Modified NEWS2 Algorithm (คำนวณคะแนนสรีรวิทยา 0-9)"]
+    end
+
+    subgraph AGENT_TEAM["4. AI Care Agent Team (ระบบกำกับความปลอดภัย)"]
+        RF --> AGENTS["VitalAlertAgent & Safety Supervisor"]
+        PERSIST --> AGENTS
+        IF --> AGENTS
+        PM --> AGENTS
+        NEWS2 --> AGENTS
+        ABSTAIN --> AGENTS
+        AGENTS --> AUDIT[("SQLite Audit Trail & Decision Logs")]
+    end
+
+    subgraph APPS["5. พอร์ทัลผู้ใช้งาน & การแสดงผล (Frontend)"]
+        AGENTS --> CENTRAL["Central Console (ศูนย์กลาง 60 เตียง)"]
+        AGENTS --> DOCTOR["Doctor Care Hub (แพทย์ 5 เตียง & SBAR)"]
+        AGENTS --> PATIENT["Patient Portal (พอร์ทัลผู้ป่วย & Range Gauges)"]
+        AGENTS --> PUSH["Web Push Notification (มือถือพยาบาลเวร)"]
+        AUDIT --> LAB["AI Evidence & Research Lab (Replay & Benchmarks)"]
+    end
+```
+
+---
+
+### 🧰 เครื่องมือและเทคโนโลยีที่ใช้พัฒนา (Tools & Technology Stack)
+
+| ส่วนของระบบ | เครื่องมือ / ภาษา / ไลบรารี | หน้าที่และความรับผิดชอบในระบบ |
+| :--- | :--- | :--- |
+| **Backend Core** | **Python 3.14+**, **FastAPI**, **Uvicorn** | เซิร์ฟเวอร์ API ประสิทธิภาพสูง รองรับทั้ง RESTful API และ Real-time WebSockets |
+| **Database** | **SQLite 3 (WAL Mode)** | ฐานข้อมูล ACID แบบฝังตัว ไร้การพึ่งพาภายนอก จัดเก็บเวชระเบียน แผนการดูแล และ Audit Trail |
+| **Machine Learning** | **Scikit-learn 1.9**, **NumPy 2.4**, **Joblib 1.6**, **SciPy** | ฝึกและรันโมเดล Random Forest, Isolation Forest, Logistic Regression และประมวลผลสัญญาณ |
+| **Streaming / IoT** | **WebSockets**, **AsyncIO**, **MQTT (paho-mqtt)** | รับ-ส่งข้อมูลสัญญาณชีพสดแบบ 1 Hz แบบ Real-time ความหน่วงต่ำ (<50ms) |
+| **Push Notification** | **pywebpush**, **VAPID**, **Web Cryptography** | ระบบแจ้งเตือน Web Push ไปยังสมาร์ทโฟนเจ้าหน้าที่ตามมาตรฐานความปลอดภัย W3C |
+| **Document Export** | **python-docx**, Plain Text Formatter | สร้างรายงานส่งต่อเวรทางการแพทย์มาตรฐาน SBAR ทั้งไฟล์ Text และ Word (.docx) |
+| **Frontend Framework** | **Next.js 16 (App Router)**, **React 19**, **TypeScript** | พอร์ทัลเว็บแอปพลิเคชันฝั่งเจ้าหน้าที่ (Staff) และฝั่งผู้ป่วย (Patient) แยก Bundle เด็ดขาด |
+| **Styling & Theme** | **CSS Modules**, Modern Clean Minimalist Design | ออกแบบ UI เกรดโรงพยาบาล ไร้สติกเกอร์รกรุงรัง รองรับโหมดถนอมสายตา (Night Shift) |
+| **Visualization** | **Recharts**, **HTML5 Canvas**, **SVG** | เรนเดอร์กราฟสัญญาณชีพ Real-time 1 Hz, แผนภาพแรงกด 32×64 และ Range Gauges |
+| **Testing & Quality** | **Node.js Test Runner (`node --test`)**, **Python `unittest`**, **ESLint** | ชุดทดสอบครอบคลุม 100%: 210 Backend tests, 19 Script tests, 74 Frontend contract tests |
+| **DevOps & Containers** | **Docker**, **Docker Compose**, **Nginx**, **Unix Socket Daemon** | ระบบคอนเทนเนอร์และตัวรันเซิร์ฟเวอร์แบบระบุโปรเซสเจ้าของ (`scripts/run_ward.py`) |
+
+---
+
+### 📟 รายการอุปกรณ์และฮาร์ดแวร์ข้างเตียง (Bedside Device Ecosystem)
+
+| ไอคอน | ชื่ออุปกรณ์ / เซนเซอร์ | บทบาทและลักษณะการส่งข้อมูล | การตรวจวัดสถานะ (Device Health) |
+| :---: | :--- | :--- | :--- |
+| 💓 | **Pulse Oximeter (SpO₂ & HR)** | วัดระดับออกซิเจนในเลือด (SpO₂) และอัตราการเต้นของหัวใจ (Heart Rate) แบบ 1 Hz | ตรวจจับการหลุดของหัววัด (Attachment Fault), แบตเตอรี่, คุณภาพสัญญาณ |
+| 🫁 | **Respiratory Sensor (Chest Band)** | วัดอัตราการหายใจ (Respiratory Rate - RR) วิเคราะห์จังหวะการขยายตัวของทรวงอก | ตรวจจับสายรัดขยับหลุด, สัญญาณรบกวนจากการไอหรือเปลี่ยนท่า |
+| 🛏️ | **Smart In-Bed Pressure Mat** | แผ่นวัดแรงกด 32×64 จุด (2,048 เซนเซอร์) ใต้เบาะนอน วิเคราะห์ท่านอนและการแช่ท่า | เตือนการแช่ท่านานเกิน 2 ชั่วโมง ป้องกันการเกิดแผลกดทับ (Pressure Injury) |
+| 📟 | **Bedside Telemetry Hub** | เกตเวย์ควบคุมประจำเตียง รวมสัญญาณเซนเซอร์ ส่งต่อผ่าน MQTT/WebSockets | ส่ง Heartbeat ทุก 5 วินาที พร้อมส่งระดับแบตเตอรี่และสถานะการเชื่อมต่อ |
+| 🖥️ | **Central Console Workstation** | จอภาพศูนย์กลางหอผู้ป่วย ควบคุมและเฝ้าระวังผู้ป่วย 60 เตียงพร้อมกัน | แสดงสถานะแยกโซน รายชื่อแพทย์เจ้าของไข้ และป้ายงดสรุปผล AI (Abstention) |
+| 👨‍⚕️ | **Doctor Tablet / Clinician PC** | หน้าจอเวิร์กสเปซของแพทย์ผู้รับผิดชอบ (Care Hub ดูแล 5 เตียง) | ตรวจสอบ Modified NEWS2, บันทึกโน้ตข้างเตียง, คัดลอก SBAR, และแชทดูแล |
+| 📱 | **Nurse Smartphone** | สมาร์ทโฟนพยาบาลเวร สำหรับรับการแจ้งเตือนฉุกเฉินผ่าน Web Push | ล็อกหน้าจอแสดงเฉพาะระดับความสำคัญ ไม่เปิดเผยข้อมูลส่วนบุคคลของผู้ป่วย |
+
+---
+
+### 📚 รายการชุดข้อมูลวิจัยทั้งหมด (Complete Datasets Inventory)
+
+| ไอคอน | ชุดข้อมูล (Dataset) | แหล่งที่มา / ลิขสิทธิ์ | ขนาดและการแบ่งชุดข้อมูล (Splits) | วัตถุประสงค์ในระบบ Smart Ward |
+| :---: | :--- | :--- | :--- | :--- |
+| 📊 | **PhysioNet BIDMC PPG & Respiration v1.0.0** | [PhysioNet BIDMC](https://physionet.org/content/bidmc/1.0.0/) · ODC-BY v1.0 | 53 บันทึก numeric (1 Hz) · สกัดได้ 3,939 หน้าต่าง (Train 30 / Val 11 / Test 11 files) | ฝึกโมเดลพยากรณ์สัญญาณชีพสดล่วงหน้า 30 วินาที และตรวจจับ Anomaly สด |
+| 🛏️ | **PhysioNet Pressure Map Dataset (PMD) v1.0.0** | [PhysioNet PMD](https://physionet.org/content/pmd/1.0.0/) (Pouyan et al., 2017) | กริดแรงกด 32×64 (2,048 จุด) จาก 13 อาสาสมัครผู้ใหญ่ (Train 7 / Val 3 / Test 3 คน) | สกัด 128 Spatial Features เพื่อจำแนกท่านอน (หงาย/ซ้าย/ขวา) และตรวจการพลิกตัว |
+| 🧪 | **PhysioNet/CinC Challenge 2012** | [PhysioNet CinC 2012](https://physionet.org/content/challenge-2012/) | ข้อมูลออฟไลน์ 4,000 รายแรกเข้า ICU 48 ชั่วโมง | จัดแสดงเป็น Historical Research Benchmark ย้อนหลัง (ปิดการทายสดอย่างปลอดภัย) |
+| 🔬 | **PhysioNet Sepsis Challenge 2019** | [PhysioNet Sepsis 2019](https://physionet.org/content/challenge-2019/) | ข้อมูลย้อนหลัง 4,000 ราย (Site A ภายใน 3,000 ราย + Site B ข้ามโรงพยาบาล 1,000 ราย) | ใช้ในห้องวิจัย **AI Research Lab** เพื่อศึกษาการทำนายล่วงหน้ารายชั่วโมงและ Brier Score |
+
+---
+
+### 🧠 สรุปโมเดลปัญญาประดิษฐ์และอัลกอริทึม (AI & Models Architecture)
+
+1. **Random Forest Regressor (`RandomForestRegressor`)**:
+   * **หน้าที่**: พยากรณ์ค่าชีพจร (Heart Rate) และอัตราการหายใจ (Respiratory Rate) ล่วงหน้า 30 วินาที จากข้อมูล 60 วินาทีย้อนหลัง (1 Hz)
+   * **ผลการประเมิน**: HR Test MAE 1.9770 bpm, RR Test MAE 1.2717 ครั้ง/นาที
+2. **Persistence Baseline**:
+   * **หน้าที่**: ใช้วิธีคงค่าเดิมล่าสุดสำหรับระดับออกซิเจนในเลือด (SpO₂)
+   * **เหตุผลทางวิทยาศาสตร์**: ในช่วงเวลาสั้น 30 วินาที SpO₂ ของมนุษย์มักไม่เปลี่ยนแปลงฉับพลัน ในชุด Validation การคงค่าเดิมให้ผล MAE (0.2918) แม่นยำกว่าการใช้ Regressor ซับซ้อน จึงเลือกวิธีที่ปลอดภัยที่สุด
+3. **Isolation Forest (`IsolationForest`)**:
+   * **หน้าที่**: ตรวจจับความผิดปกติของรูปแบบสัญญาณชีพแบบ Unsupervised (Multivariate Anomaly Score) โดยไม่สร้างข้อสรุปโรคปลอม
+4. **Logistic Regression บน Spatial Features 128 มิติ**:
+   * **หน้าที่**: จำแนกท่านอน 3 ท่า (หงาย, ตะแคงซ้าย, ตะแคงขวา) จากแผ่นแรงกด 32×64 ย่อขนาดเหลือ 8×16
+   * **ผลการประเมิน**: Validation Macro-F1 = 0.9708, Test Accuracy = 97.06% พร้อมระบบซ่อนผล (Blinded) ให้คนบันทึก Ground Truth ก่อนเปิดเฉลย
+5. **Deterministic Modified NEWS2 Algorithm**:
+   * **หน้าที่**: คำนวณคะแนนเตือนภัยล่วงหน้าทางสรีรวิทยามาตรฐานราชวิทยาลัยอายุรแพทย์แห่งลอนดอน (RCP NEWS2) 0–9 คะแนน พร้อมแบ่งระดับความเสี่ยง Low / Medium / High
+6. **AI Care Agent Team v1 (Deterministic Multi-Agent Engine)**:
+   * ประกอบด้วย 8 บทบาท: `TelemetryAgent`, `DataQualityGate`, `VitalAlertAgent`, `DeviceHealthAgent`, `CareCoordinator`, `NotificationAgent`, `DocumentationAgent`, และ `SafetySupervisor` ทำหน้าที่ควบคุมและบันทึก Audit Trail ทุกการตัดสินใจ โดยไม่มีสิทธิ์สั่งจ่ายยาหรือสั่งการรักษาด้วยตนเอง
+7. **Gemini API (Optional On-Demand LLM)**:
+   * ให้บริการตอบคำถามและสร้างเอกสารสรุปเวรทางคลินิกเมื่อบุคลากรทางการแพทย์กดสั่งการ (ทำงานเสริมแบบ Local-First หากไม่มีการตั้งค่า API Key ระบบมอนิเตอร์และการเตือนภัยยังทำงานได้ 100% ปกติ)
+
+---
 
 ## What AI actually does
 
@@ -170,14 +290,30 @@ and --stop clean up processes started by that launcher. A forced OS kill, crash,
 or power loss cannot guarantee graceful cleanup; stale control sockets are
 recovered, but unidentified leftover port owners are never killed automatically.
 
-| Portal | Address | Access |
-| --- | --- | --- |
-| Staff: doctors/nurses | http://localhost:3000 | username clinician; password generated in backend/.staff-password |
-| Patient | http://localhost:3001 | one synthetic ID, e.g. A001 |
-| Test doctor | http://localhost:3000 | `test_d` / `admin1234` · ธุวานนธ์ โต้ตอบ |
-| Test patient | http://localhost:3001 | `test_p` / `admin4321` · ธุวานนธ์ ตอบโต้ |
-| Staff API | http://127.0.0.1:8000 | staff session required |
-| Patient API | http://127.0.0.1:8001 | patient session; /api/me and own trends/care/daily/report/stream |
+| Role | Portal Address | Demo Login | Scope & Chat Access |
+| --- | --- | --- | --- |
+| **Doctor (5 Patients)** | http://localhost:3000 | `doctor5` / `doctor1234` · นพ. วิชัย ใจดี (Dr. Wichai) | Sees and manages only their **5 assigned patients** (`A001, A002, A003, A004, B001`); bidirectional chat with each of their own 5 patients |
+| **Central Console** | http://localhost:3000 | `central` / `central1234` · ศูนย์กลางเฝ้าระวังหอผู้ป่วย | Sees **all 60 patients** and the responsible doctor for each bed at a glance; **no chat system** (UI hidden, `/api/care-chat/*` returns `403 Forbidden`) |
+| **Patient (Ward Bed)** | http://localhost:3001 | `A001` (ID-only demo login) | Sees only `A001` data; chats only with their single assigned doctor (`doctor5` · นพ. วิชัย ใจดี) |
+| **Test Doctor (1 Patient)** | http://localhost:3000 | `test_d` / `admin1234` · ธุวานนธ์ โต้ตอบ | Sees and chats only with `TEST_P` |
+| **Test Patient** | http://localhost:3001 | `test_p` / `admin4321` · ธุวานนธ์ ตอบโต้ | Sees only `TEST_P`; chats only with `test_d` |
+| **Additional Demo Doctors** | http://localhost:3000 | `dr_napat` / `doctor1234` (`A005`–`A020`), `dr_anong` / `doctor1234` (`B002`–`B020`), `dr_kittisak` / `doctor1234` (`C001`–`C020`) | Scoped to their respective assigned beds |
+| **Staff Operator (Legacy)** | http://localhost:3000 | `clinician` / password in `backend/.staff-password` | Full demo ward operator |
+| **Staff API** | http://127.0.0.1:8000 | Staff session cookie (`ward_staff_session`) | Enforces role scope on REST and `/ws/vitals` |
+| **Patient API** | http://127.0.0.1:8001 | Patient session cookie (`ward_patient_session`) | `/api/me` and own trends/care/daily/report/stream |
+
+### Seed / Reset Demo Accounts & Doctor-Patient Assignments (Idempotent)
+
+Every patient is assigned to **exactly one** doctor, enforced at the database level via `patient_id TEXT PRIMARY KEY` in `patient_doctor_assignments`. To seed or re-verify the demo accounts and 1-to-many doctor-patient assignments at any time (safe to re-run):
+
+```bash
+python3 scripts/seed_demo_accounts.py
+```
+
+### Care Hub & Unified Settings Navigation
+
+- **Care Hub (`/?section=care_hub`)**: Dedicated task-first patient-care workspace where clinicians select an assigned patient and view live vitals, deterministic Modified NEWS2, visible AI abstention (`INVALID_DATA` / `STALE_DATA`), active alerts + acknowledgement, trends, bedside notes/SBAR, and doctor-patient chat in one coherent layout.
+- **Unified Settings (`/?section=settings`)**: Reachable in 1 click from the header or sidebar (`ตั้งค่าระบบ`), grouped into **Display** (Night Shift mode, compact cards), **Alerts & Sounds** (critical/warning chimes), **Mobile Notifications** (Web Push), and **AI & Governance** (AI Monitor, Agent Team, Evidence Replay, AI Research Lab, Audit Trail & Benchmarks). Legacy URLs (`/?section=ai`, `/?section=evidence`, `/?section=research`, `/?section=notifications`) automatically redirect into the corresponding Settings tab.
 
 Set WARD_STAFF_PASSWORD before launch to use a chosen staff password instead.
 Do not commit/share passwords. The launcher uses backend/runtime/ward-demo.db

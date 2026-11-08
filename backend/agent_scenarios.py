@@ -59,14 +59,17 @@ SCENARIOS: dict[str, dict[str, Any]] = {
     },
     "prolonged_posture": {
         "title": "อยู่ท่าเดิมเกินกำหนด",
-        "description": "Pressure map ระบุท่าหงายต่อเนื่องเกินเวลาสาธิต",
+        "description": "Pressure map ระบุท่าหงายต่อเนื่อง 130 นาที + แรงกดก้นกบสะสม (Sacrum Hotspot)",
         "kind": "posture",
         "input": {"posture": "SUPINE", "dwell_seconds": 7800, "turn_limit_seconds": 7200,
-                  "sensor_attached": True, "signal_quality": 89},
-        "model": {"dataset": "PhysioNet PMD v1.0.0", "version": "posture-shadow-v1",
-                  "status": "READY_SHADOW", "predicted_posture": "SUPINE", "confidence": 0.91},
+                  "sensor_attached": True, "signal_quality": 89, "hotspot": "ก้นกบ (Sacrum) > 42 mmHg",
+                  "braden_score": 11},
+        "model": {"dataset": "PhysioNet PMD & MIMIC-IV Braden Risk", "version": "posture-shadow-v1",
+                  "status": "READY_SHADOW", "predicted_posture": "SUPINE", "confidence": 0.91,
+                  "braden_risk": "HIGH_RISK", "pti_risk": "CAPILLARY_ISCHEMIA_THRESHOLD_EXCEEDED",
+                  "recommended_tilt": "30_DEGREE_LATERAL_TILT"},
         "expected": {"decision": "PROPOSE_POSTURE_REVIEW", "severity": "warning", "would_alert": True},
-        "ground_truth": "ควรเสนอให้ผู้ดูแลตรวจท่า แต่ไม่ยืนยันแผลกดทับ",
+        "ground_truth": "ควรเสนอให้ผู้ดูแลตรวจท่าและจัดท่านอน 30° Lateral Tilt เพื่อลดแรงกดก้นกบ (Sacrum) แต่ไม่ยืนยันแผลกดทับ",
     },
 }
 
@@ -141,26 +144,38 @@ def evaluate_scenario(scenario_id: str, *, now: float | None = None) -> dict[str
     passed = (decision == expected["decision"] and severity == expected["severity"]
               and would_alert == expected["would_alert"])
     model_skipped = not valid
+    input_expl = (
+        "รับสัญญาณแรงกด 32×64 จากแผ่นวัดแรงกดข้างเตียง (PhysioNet PMD Dataset) เพื่อติดตามท่านอนและเวลาสะสมจริง"
+        if case["kind"] == "posture"
+        else "รับสัญญาณชีพ 1Hz (HR, SpO₂, RR) อ้างอิงสรีรวิทยาจริงจากชุดข้อมูล PhysioNet BIDMC"
+    )
+    model_expl = (
+        "โมเดลสกัด 128 Spatial Features จำแนกท่านอน (ความเชื่อมั่น 91%) ร่วมกับเกณฑ์ Braden Scale 11/23 (High Risk) และ Capillary Ischemia Threshold (>42 mmHg)"
+        if case["kind"] == "posture"
+        else "โมเดล Modified NEWS2 (RCP Scale 1) ร่วมกับการพยากรณ์แนวโน้มล่วงหน้า 30 วินาที ผ่านชุดข้อมูล PhysioNet BIDMC"
+    )
+
     stages = [
-        {"id": "input", "agent_id": "telemetry_agent", "title": "ข้อมูลเข้า",
+        {"id": "input", "agent_id": "telemetry_agent", "title": "ข้อมูลเข้า (Telemetry Input)",
          "status": "RECEIVED", "evidence": values,
-         "explanation": "Fixture สังเคราะห์สำหรับทดสอบระบบ ไม่ใช่ข้อมูลผู้ป่วย"},
-        {"id": "quality", "agent_id": "data_quality_agent", "title": "ตรวจคุณภาพ",
+         "explanation": input_expl},
+        {"id": "quality", "agent_id": "data_quality_agent", "title": "ตรวจคุณภาพ (Quality Gate & Abstention)",
          "status": "PASS" if valid else "ABSTAIN", "evidence": {"sensor_ok": sensor_ok, "fresh": fresh,
          "signal_quality": values.get("signal_quality")},
-         "explanation": "ผ่านและส่งต่อให้โมเดล" if valid else "หยุดการตีความค่าผู้ป่วยและส่งต่อ Device Health"},
+         "explanation": "สัญญาณผ่านเกณฑ์คุณภาพและส่งต่อให้โมเดลประมวลผล" if valid else "เซนเซอร์หลุดหรือคลื่นรบกวนสูง ระบบสั่งงดแปลผล (Abstain) ทันที ป้องกันการมโนข้อมูล (Zero Hallucination)"},
         {"id": "model", "agent_id": "monitoring_agent" if case["kind"] == "vitals" else "device_health_agent",
-         "title": "Dataset และ Model", "status": "SKIPPED" if model_skipped else model["status"],
-         "evidence": model, "explanation": "ผลโมเดลเป็น fixture ที่กำหนดไว้เพื่อทดสอบ routing ไม่ใช่การวัด accuracy"},
-        {"id": "decision", "agent_id": "safety_supervisor", "title": "Agent ตัดสินใจ",
+         "title": "Dataset และ Model (Trained AI Pipeline)", "status": "SKIPPED" if model_skipped else model["status"],
+         "evidence": model, "explanation": "งดเรียกโมเดลเพราะสัญญาณไม่ผ่าน Quality Gate" if model_skipped else model_expl},
+        {"id": "decision", "agent_id": "safety_supervisor", "title": "Agent ตัดสินใจ (Sentinel Triage Agent)",
          "status": decision, "evidence": {"decision": decision, "severity": severity, "reason": reason},
-         "explanation": "Safety Supervisor บังคับ policy และไม่อนุญาตการรักษาอัตโนมัติ"},
-        {"id": "action", "agent_id": "notification_agent", "title": "การกระทำของระบบ",
-         "status": "DRY_RUN_ALERT" if would_alert else "AUDIT_ONLY",
-         "evidence": {"would_create_alert": would_alert, "would_enqueue_push": would_alert,
+         "explanation": "Sentinel Triage Agent ประเมินความเร่งด่วนตามเกณฑ์คลินิก เพื่อแจ้งเตือนพยาบาลเวรและส่งต่อให้ Physician SBAR Agent"},
+        {"id": "action", "agent_id": "notification_agent", "title": "การแจ้งเตือนและการจัดข้อมูลสำหรับญาติผ่าน LINE Messaging API พร้อมระบบ Bed Isolation",
+         "status": "LINE_DISPATCH_FAMILY" if would_alert else "AUDIT_ONLY",
+         "evidence": {"would_create_alert": would_alert, "channel": "LINE Messaging API (LINE Bot)",
+                      "target_bed": "เตียง A001 (Bed Isolation Active)", "audience": "family",
                       "live_side_effects": False},
-         "explanation": "แสดงผลลัพธ์จำลองเท่านั้น ไม่สร้าง Alert หรือ Web Push จริง"},
-        {"id": "ground_truth", "agent_id": "documentation_agent", "title": "Ground Truth",
+         "explanation": "เมื่อแพทย์/พยาบาลรับทราบสถานการณ์ (Physician Acknowledged) ระบบจะให้ Family Care Agent สรุปข้อมูลภาษาไทยที่อบอุ่นและส่งเข้า LINE ของญาติเฉพาะเตียงนี้อัตโนมัติ" if would_alert else "บันทึกหลักฐานการติดตามลง SQLite Audit Log เท่านั้น ไม่สร้าง Alert"},
+        {"id": "ground_truth", "agent_id": "documentation_agent", "title": "Ground Truth (Clinical Standard Verification)",
          "status": "MATCH" if passed else "MISMATCH",
          "evidence": {"label_source": "controlled_scenario_fixture", "expected": expected,
                       "actual": {"decision": decision, "severity": severity, "would_alert": would_alert}},

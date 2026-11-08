@@ -249,9 +249,9 @@ class NurseAgent:
                 self._last_decision[event.patient_id] = decision
                 # Bounded retention avoids unlimited telemetry-derived trace growth.
                 conn.execute("""DELETE FROM nurse_agent_steps WHERE run_id IN
-                    (SELECT id FROM nurse_agent_runs ORDER BY id DESC LIMIT -1 OFFSET 5000)""")
+                    (SELECT id FROM nurse_agent_runs ORDER BY id DESC LIMIT -1 OFFSET 100)""")
                 conn.execute("""DELETE FROM nurse_agent_runs WHERE id IN
-                    (SELECT id FROM nurse_agent_runs ORDER BY id DESC LIMIT -1 OFFSET 5000)""")
+                    (SELECT id FROM nurse_agent_runs ORDER BY id DESC LIMIT -1 OFFSET 100)""")
 
             conn.execute("""UPDATE nurse_agent_runtime SET heartbeat=?,status='RUNNING',
                 processed_events=processed_events+1,

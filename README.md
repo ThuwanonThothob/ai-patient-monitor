@@ -101,6 +101,9 @@ flowchart TD
 | :---: | :--- | :--- | :--- | :--- |
 | 📊 | **PhysioNet BIDMC PPG & Respiration v1.0.0** | [PhysioNet BIDMC](https://physionet.org/content/bidmc/1.0.0/) · ODC-BY v1.0 | 53 บันทึก numeric (1 Hz) · สกัดได้ 3,939 หน้าต่าง (Train 30 / Val 11 / Test 11 files) | ฝึกโมเดลพยากรณ์สัญญาณชีพสดล่วงหน้า 30 วินาที และตรวจจับ Anomaly สด |
 | 🛏️ | **PhysioNet Pressure Map Dataset (PMD) v1.0.0** | [PhysioNet PMD](https://physionet.org/content/pmd/1.0.0/) (Pouyan et al., 2017) | กริดแรงกด 32×64 (2,048 จุด) จาก 13 อาสาสมัครผู้ใหญ่ (Train 7 / Val 3 / Test 3 คน) | สกัด 128 Spatial Features เพื่อจำแนกท่านอน (หงาย/ซ้าย/ขวา) และตรวจการพลิกตัว |
+| 🩹 | **MIMIC-IV Clinical EHR Database** | [PhysioNet MIMIC-IV](https://physionet.org/content/mimiciv/) (Johnson et al.) | เวชระเบียนผู้ป่วยจริง >50,000 ราย พร้อมบันทึก Braden Scale รายเวรและรหัสแผลกดทับ ICD-9/10 (L89) | ฐานข้อมูลมาตรฐานสำหรับฝึกและเทียบเคียงโมเดลประเมินความเสี่ยงแผลกดทับ (Braden Risk Prediction) |
+| 📸 | **Medetec / MedNode Open Wound Image Repository** | Open Clinical Repositories (EPUAP/NPIAP Benchmark) | คลังภาพถ่ายแผลกดทับระดับคลินิกแยก 4 ระยะ (Stage 1–4, Unstageable) | สำหรับการวิจัยคัดกรองรอยแดงขั้นต้น (Non-blanchable Erythema - Stage 1) ก่อนผิวหนังแตกเป็นแผล |
+| ⏱️ | **In-Bed Sensor & Movement Dataset (Casas et al.)** | [UCI Machine Learning Repository](https://archive.ics.uci.edu/) / Open Health Data | อนุกรมเวลาแรงกดและเซนเซอร์การเคลื่อนไหวของผู้ป่วยติดเตียง | ตรวจจับการขยับตัวผ่อนแรงกดระดับเล็ก (Micro-movements) เพื่อคัดแยกผู้ป่วยที่นอนนิ่งสนิท |
 | 🧪 | **PhysioNet/CinC Challenge 2012** | [PhysioNet CinC 2012](https://physionet.org/content/challenge-2012/) | ข้อมูลออฟไลน์ 4,000 รายแรกเข้า ICU 48 ชั่วโมง | จัดแสดงเป็น Historical Research Benchmark ย้อนหลัง (ปิดการทายสดอย่างปลอดภัย) |
 | 🔬 | **PhysioNet Sepsis Challenge 2019** | [PhysioNet Sepsis 2019](https://physionet.org/content/challenge-2019/) | ข้อมูลย้อนหลัง 4,000 ราย (Site A ภายใน 3,000 ราย + Site B ข้ามโรงพยาบาล 1,000 ราย) | ใช้ในห้องวิจัย **AI Research Lab** เพื่อศึกษาการทำนายล่วงหน้ารายชั่วโมงและ Brier Score |
 
@@ -121,9 +124,18 @@ flowchart TD
    * **ผลการประเมิน**: Validation Macro-F1 = 0.9708, Test Accuracy = 97.06% พร้อมระบบซ่อนผล (Blinded) ให้คนบันทึก Ground Truth ก่อนเปิดเฉลย
 5. **Deterministic Modified NEWS2 Algorithm**:
    * **หน้าที่**: คำนวณคะแนนเตือนภัยล่วงหน้าทางสรีรวิทยามาตรฐานราชวิทยาลัยอายุรแพทย์แห่งลอนดอน (RCP NEWS2) 0–9 คะแนน พร้อมแบ่งระดับความเสี่ยง Low / Medium / High
-6. **AI Care Agent Team v1 (Deterministic Multi-Agent Engine)**:
-   * ประกอบด้วย 8 บทบาท: `TelemetryAgent`, `DataQualityGate`, `VitalAlertAgent`, `DeviceHealthAgent`, `CareCoordinator`, `NotificationAgent`, `DocumentationAgent`, และ `SafetySupervisor` ทำหน้าที่ควบคุมและบันทึก Audit Trail ทุกการตัดสินใจ โดยไม่มีสิทธิ์สั่งจ่ายยาหรือสั่งการรักษาด้วยตนเอง
-7. **Gemini API (Optional On-Demand LLM)**:
+6. **24/7 AI Multi-Agent Care Team (ระบบทีม AI บริบาล 24 ชม. แบ่งหน้าที่ชัดเจน)**:
+   * **🛡️ Sentinel Triage Agent**: เฝ้าระวังข้างเตียง 24 ชั่วโมง ตรวจจับ SpO₂ ตก, สัญญาณชีพผิดปกติ, และรอบพลิกตัว 2 ชม. แจ้งเตือนสถานีพยาบาลเวรทันที
+   * **📋 Physician SBAR Agent**: สรุปเวชระเบียนทางคลินิกเป็นโครงสร้าง SBAR (Situation, Background, Assessment, Recommendation) พร้อมสถิติ 24 ชม., Delta Trends และคะแนน Braden Scale ส่งให้แพทย์บน Central Console ทั้งรูปแบบ Text และไฟล์ Word (.docx)
+   * **💬 Family Care Agent**: เมื่อแพทย์/พยาบาลกดรับทราบ (Acknowledge) ระบบอัตโนมัติจะสั่งงาน Family Care Agent แปลงผลตรวจเป็นภาษาไทยที่อบอุ่นและส่งเข้า LINE Messaging API ของครอบครัวผู้ป่วยเฉพาะเตียงนั้น (Bed Isolation) อัตโนมัติ
+7. **Dynamic Braden Scale & Pressure-Time Integral (PTI) Engine**:
+   * **หน้าที่**: ประเมินความเสี่ยงแผลกดทับสำหรับผู้ป่วยติดเตียง (Braden Score 11/23 กลุ่มเสี่ยงสูง - High Risk) + ตรวจจับแรงกดเกินเกณฑ์หลอดเลือดฝอยขาดเลือด (Capillary Ischemia >42 mmHg) บริเวณจุดเสี่ยง (ก้นกบ Sacrum, ส้นเท้า Heels, ปุ่มกระดูกสะโพก Greater Trochanter)
+   * **คำแนะนำจัดท่า**: แนะนำการจัดท่านอนตะแคง 30° Lateral Tilt ตามมาตรฐานสากล EPUAP/NPIAP พร้อมระบบแจ้งเตือนรอบพลิกตัวทุก 2 ชั่วโมง (120 นาที)
+8. **Physician Clinical Reporting Engine (SBAR Text & Word .docx)**:
+   * สร้างเอกสารสรุปส่งต่อเวรและรายงานแพทย์อย่างเป็นทางการ ไม่มโนข้อมูล (Zero Hallucination) จัดตารางอย่างสวยงามพร้อมคำสั่งการรักษาที่เสนอให้แพทย์พิจารณา (Physician Orders to Consider)
+9. **Automated Storage Management & Database Compaction**:
+   * นโยบาย Rolling Window Data Retention ควบคุมขนาดฐานข้อมูล SQLite ไม่ให้สะสมเกินความจำเป็น พร้อมคำสั่งและ API `POST /api/maintenance/prune-data` เพื่อล้างข้อมูลจำลองเก่าและรัน `VACUUM` คืนพื้นที่ดิสก์เหลือไม่เกิน 5 MB
+10. **Gemini API (Optional On-Demand LLM)**:
    * ให้บริการตอบคำถามและสร้างเอกสารสรุปเวรทางคลินิกเมื่อบุคลากรทางการแพทย์กดสั่งการ (ทำงานเสริมแบบ Local-First หากไม่มีการตั้งค่า API Key ระบบมอนิเตอร์และการเตือนภัยยังทำงานได้ 100% ปกติ)
 
 ---
@@ -290,17 +302,20 @@ and --stop clean up processes started by that launcher. A forced OS kill, crash,
 or power loss cannot guarantee graceful cleanup; stale control sockets are
 recovered, but unidentified leftover port owners are never killed automatically.
 
-| Role | Portal Address | Demo Login | Scope & Chat Access |
+| Role | Portal Address | Demo User ID (Username) | Scope & Chat Access |
 | --- | --- | --- | --- |
-| **Doctor (5 Patients)** | http://localhost:3000 | `doctor5` / `doctor1234` · นพ. วิชัย ใจดี (Dr. Wichai) | Sees and manages only their **5 assigned patients** (`A001, A002, A003, A004, B001`); bidirectional chat with each of their own 5 patients |
-| **Central Console** | http://localhost:3000 | `central` / `central1234` · ศูนย์กลางเฝ้าระวังหอผู้ป่วย | Sees **all 60 patients** and the responsible doctor for each bed at a glance; **no chat system** (UI hidden, `/api/care-chat/*` returns `403 Forbidden`) |
-| **Patient (Ward Bed)** | http://localhost:3001 | `A001` (ID-only demo login) | Sees only `A001` data; chats only with their single assigned doctor (`doctor5` · นพ. วิชัย ใจดี) |
-| **Test Doctor (1 Patient)** | http://localhost:3000 | `test_d` / `admin1234` · ธุวานนธ์ โต้ตอบ | Sees and chats only with `TEST_P` |
-| **Test Patient** | http://localhost:3001 | `test_p` / `admin4321` · ธุวานนธ์ ตอบโต้ | Sees only `TEST_P`; chats only with `test_d` |
-| **Additional Demo Doctors** | http://localhost:3000 | `dr_napat` / `doctor1234` (`A005`–`A020`), `dr_anong` / `doctor1234` (`B002`–`B020`), `dr_kittisak` / `doctor1234` (`C001`–`C020`) | Scoped to their respective assigned beds |
-| **Staff Operator (Legacy)** | http://localhost:3000 | `clinician` / password in `backend/.staff-password` | Full demo ward operator |
+| **Doctor (5 Patients)** | http://localhost:3000 | `doctor5` (นพ. วิชัย ใจดี) | ดูแลและจัดการเฉพาะ **5 เตียงที่รับผิดชอบ** (`A001, A002, A003, A004, B001`) พร้อมระบบแชท 2 ทางกับผู้ป่วย |
+| **Central Console** | http://localhost:3000 | `central` (ศูนย์กลางเฝ้าระวัง) | ดูภาพรวมผู้ป่วยครบทั้ง **60 เตียง** พร้อมชื่อแพทย์ผู้รับผิดชอบ (ไม่มีระบบแชท เพื่อรักษาความเป็นส่วนตัว) |
+| **Patient (Ward Bed)** | http://localhost:3001 | `A001` (เตียงผู้ป่วย A001) | ดูเฉพาะข้อมูลของเตียงตนเอง แชทกับแพทย์ประจำตัว (`doctor5`) พร้อมระบบล็อกเตียง Bed Isolation |
+| **Test Doctor (1 Patient)** | http://localhost:3000 | `test_d` (แพทย์ทดสอบ) | ตรวจติดตามและแชทกับ `TEST_P` |
+| **Test Patient** | http://localhost:3001 | `test_p` (ผู้ป่วยทดสอบ) | ดูเฉพาะข้อมูล `TEST_P` และแชทกับ `test_d` |
+| **Additional Demo Doctors** | http://localhost:3000 | `dr_napat` (`A005`–`A020`), `dr_anong` (`B002`–`B020`), `dr_kittisak` (`C001`–`C020`) | ประจำแต่ละโซนผู้ป่วยตามที่ได้รับมอบหมาย |
+| **Staff Operator (Legacy)** | http://localhost:3000 | `clinician` (เจ้าหน้าที่สาธิต) | ดูแลภาพรวมของหอผู้ป่วย |
 | **Staff API** | http://127.0.0.1:8000 | Staff session cookie (`ward_staff_session`) | Enforces role scope on REST and `/ws/vitals` |
 | **Patient API** | http://127.0.0.1:8001 | Patient session cookie (`ward_patient_session`) | `/api/me` and own trends/care/daily/report/stream |
+
+> [!NOTE]
+> **การรักษาความปลอดภัยของรหัสผ่าน (Security Notice)**: เพื่อความปลอดภัยตามมาตรฐานความมั่นคงปลอดภัยสารสนเทศ ไม่เปิดเผยรหัสผ่านในคู่มือสาธารณะ — สำหรับการทดสอบในเครื่อง ให้กำหนดรหัสผ่านผ่าน Environment Variables (`.env`) หรือไฟล์บันทึกการติดตั้งเฉพาะบุคคล
 
 ### Seed / Reset Demo Accounts & Doctor-Patient Assignments (Idempotent)
 

@@ -53,7 +53,21 @@ function getSignalStatus(quality: number) {
   return { pct, state: 'good', text: 'เสถียร (≥75%)', badgeClass: s.badgeGood, fillClass: s.meterFillGood };
 }
 
-function getTurnStatus(dwellSeconds?: number | null) {
+function getTurnStatus(dwellSeconds?: number | null, posture?: string | null) {
+  const normPosture = posture ? posture.toLowerCase() : '';
+  let hotspot = 'ก้นกบ (Sacrum) และส้นเท้า (Heels)';
+  let tiltGuidance = 'แนะนำจัดท่านอนตะแคงกึ่งหงาย 30 องศา (30° Lateral Tilt) สลับซ้าย-ขวา หนุนหมอนรองหลังและหว่างขา หลีกเลี่ยงการนอนตะแคง 90° ตรงปุ่มกระดูกสะโพก';
+
+  if (normPosture === 'left') {
+    hotspot = 'ปุ่มกระดูกสะโพกซ้าย (Greater Trochanter), หัวไหล่ซ้าย, และตาตุ่มซ้าย';
+    tiltGuidance = 'แนะนำ 30° Lateral Tilt: พลิกกลับมานอนหงายพร้อมหมอนหนุนใต้เข่าหรือตะแคงขวา 30° เพื่อคลายแรงกดทับสะโพกด้านซ้าย';
+  } else if (normPosture === 'right') {
+    hotspot = 'ปุ่มกระดูกสะโพกขวา (Greater Trochanter), หัวไหล่ขวา, และตาตุ่มขวา';
+    tiltGuidance = 'แนะนำ 30° Lateral Tilt: พลิกกลับมานอนหงายพร้อมหมอนหนุนใต้เข่าหรือตะแคงซ้าย 30° เพื่อคลายแรงกดทับสะโพกด้านขวา';
+  }
+
+  const bradenLabel = 'Braden Scale: 11/23 (กลุ่มเสี่ยงสูง - High Risk)';
+
   if (dwellSeconds == null) {
     return {
       state: 'unknown',
@@ -64,6 +78,9 @@ function getTurnStatus(dwellSeconds?: number | null) {
       minutes: 0,
       percent: 0,
       fillClass: s.meterFillGood,
+      hotspot,
+      bradenLabel,
+      tiltGuidance,
     };
   }
   const minutes = Math.max(0, Math.round(dwellSeconds / 60));
@@ -79,6 +96,9 @@ function getTurnStatus(dwellSeconds?: number | null) {
       minutes,
       percent,
       fillClass: s.meterFillCritical,
+      hotspot,
+      bradenLabel,
+      tiltGuidance,
     };
   }
   if (dwellSeconds >= 5400) {
@@ -92,6 +112,9 @@ function getTurnStatus(dwellSeconds?: number | null) {
       minutes,
       percent,
       fillClass: s.meterFillWarning,
+      hotspot,
+      bradenLabel,
+      tiltGuidance,
     };
   }
   const remaining = Math.max(1, Math.round((TURN_INTERVAL_SECONDS - dwellSeconds) / 60));
@@ -104,6 +127,9 @@ function getTurnStatus(dwellSeconds?: number | null) {
     minutes,
     percent,
     fillClass: s.meterFillGood,
+    hotspot,
+    bradenLabel,
+    tiltGuidance,
   };
 }
 
@@ -262,7 +288,7 @@ export default function BedsidePanel({ patientId }: { patientId: string }) {
 
       {/* แผ่นวัดแรงกดและการเตือนพลิกตัวสำหรับพยาบาลเวร */}
       {(() => {
-        const turn = getTurnStatus(data.posture?.dwell_seconds);
+        const turn = getTurnStatus(data.posture?.dwell_seconds, data.posture?.prediction);
         return (
           <div className={s.turnReminderBox} data-turn-state={turn.state}>
             <div className={s.turnHead}>
@@ -284,9 +310,49 @@ export default function BedsidePanel({ patientId }: { patientId: string }) {
               </div>
             </div>
 
-            <p className={s.turnGuidance}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 8, margin: '10px 0 8px' }}>
+              <div style={{ background: '#f8faf9', border: '1px solid #d5e4dd', borderRadius: 8, padding: '8px 10px', fontSize: 12 }}>
+                <span style={{ display: 'block', color: 'var(--muted)', fontSize: 11, fontWeight: 600 }}>จุดรับแรงกดวิกฤต (ANATOMICAL HOTSPOT)</span>
+                <b style={{ color: 'var(--ink)' }}>{turn.hotspot}</b>
+              </div>
+              <div style={{ background: '#f8faf9', border: '1px solid #d5e4dd', borderRadius: 8, padding: '8px 10px', fontSize: 12 }}>
+                <span style={{ display: 'block', color: 'var(--muted)', fontSize: 11, fontWeight: 600 }}>เกณฑ์ประเมินความเสี่ยงแผลกดทับ</span>
+                <b style={{ color: '#a42c3d' }}>{turn.bradenLabel}</b>
+              </div>
+            </div>
+
+            <p className={s.turnGuidance} style={{ marginBottom: 4 }}>
               <strong>คำแนะนำพยาบาลเวร:</strong> {turn.guidance}
             </p>
+            <p className={s.turnGuidance} style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
+              <strong>มาตรฐาน EPUAP/NPIAP:</strong> {turn.tiltGuidance}
+            </p>
+
+            <div style={{
+              background: '#eaf5ef',
+              border: '1px solid #b2d8c3',
+              borderRadius: 8,
+              padding: '10px 14px',
+              marginTop: 10,
+              fontSize: 12.5,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: 8,
+            }}>
+              <div>
+                <b style={{ color: '#0e6b52', display: 'block' }}>
+                  📲 การแจ้งเตือน LINE สำหรับญาติ (Family Bedside Integration)
+                </b>
+                <span style={{ color: '#2d4d3d' }}>
+                  เมื่อครบกำหนดรอบพลิกตัว (2 ชม.) หรือมีแรงกดทับสะสม ระบบ AI จะส่งข้อความภาษาไทยที่เข้าใจง่ายและคำแนะนำจัดท่า 30° Tilt ไปยัง LINE ของญาติเตียง <b>{data.patient_id}</b> โดยตรง ไม่ปะปนกับเตียงอื่น
+                </span>
+              </div>
+              <span className={s.pill} style={{ borderColor: '#0e6b52', color: '#0e6b52', background: '#fff', fontSize: 11 }}>
+                🔒 เตียง {data.patient_id} แยกช่องทางเฉพาะ
+              </span>
+            </div>
           </div>
         );
       })()}

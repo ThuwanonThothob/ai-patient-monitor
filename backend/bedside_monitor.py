@@ -271,10 +271,16 @@ class BedsideService:
                     (patient_id, inference['prediction'], posture_since, timestamp, observation_id))
             due = dwell is not None and dwell >= self.turn_seconds
             self._observe_episode(conn, patient_id, 'posture_turn_due', due, timestamp)
-        posture_alert = _alert(patient_id, 'warning',
-            f"An accepted pressure-mat posture remained unchanged for {int(dwell or 0)} seconds.",
-            'posture_turn_due', timestamp,
-            'Verify the patient and follow the human-reviewed repositioning plan; the model does not diagnose pressure injury.') if due else None
+        posture_alert = None
+        if due:
+            posture_alert = _alert(
+                patient_id, 'warning',
+                f"An accepted pressure-mat posture remained unchanged for {int(dwell or 0)} seconds.",
+                'posture_turn_due', timestamp,
+                'Verify the patient and follow the human-reviewed repositioning plan; the model does not diagnose pressure injury.'
+            )
+            posture_alert['dwell_seconds'] = dwell
+            posture_alert['posture'] = inference.get('prediction', 'supine')
         return {'patient_id': patient_id, 'device': device, 'observation_id': observation_id,
                 'prediction': inference['prediction'], 'confidence': inference['confidence'],
                 'model_version': inference['model_version'], 'reason': inference['reason'],

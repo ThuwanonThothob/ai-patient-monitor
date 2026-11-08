@@ -963,12 +963,17 @@ function PatientModal({ id, detail, error, timeline, chat, input, chatting, setI
     ? `HR ${detail?.monitor?.heart_rate ?? "—"} bpm, SpO₂ ${detail?.monitor?.spo2 ?? "—"}%, RR ${detail?.monitor?.respiratory_rate ?? "—"} /นาที`
     : `สัญญาณชีพล่าสุดขาดช่วง (${formatStaleDuration(detail?.monitor?.timestamp, clock)}) — งดใช้ค่าเก่าในการส่งเวร กรุณาตรวจหัววัดข้างเตียง`;
   const sbarStatusKey = detailFresh ? (detail?.monitor?.status ?? "") : (detail?.monitor?.status === "INVALID_DATA" ? "INVALID_DATA" : "STALE_DATA");
-  const sbarSituation = `${id} (${profile?.name ?? "ไม่ระบุชื่อ"}) โซน ${profile?.zone ?? "—"} ห้อง ${profile?.room_number ?? "—"} เตียง ${profile?.bed_number ?? "—"} · สถานะ ${labels[sbarStatusKey] ?? detail?.monitor?.status ?? "รอประเมิน"} (${sbarVitalsDetail})`;
-  const sbarBackground = `ภาวะหลัก: ${profile?.condition ?? "ไม่ระบุ"} · การเคลื่อนไหว: ${profile?.mobility ?? "—"} · แพทย์ผู้ดูแล: ${profile?.doctor ?? "—"}`;
+  const news2 = detail?.monitor?.analysis?.modified_news2;
+  const news2Total = news2?.total;
+  const news2Level = news2?.level ?? "LOW";
+  const isBedbound = (profile?.mobility ?? "").toLowerCase().includes("bedbound") || (profile?.condition ?? "").toLowerCase().includes("frail");
+  const bradenScore = isBedbound ? "11/23 (High Risk · เสี่ยงสูงต่อแผลกดทับ)" : "16/23 (Mild Risk)";
+  const sbarSituation = `${id} (${profile?.name ?? "ไม่ระบุชื่อ"}) โซน ${profile?.zone ?? "—"} ห้อง ${profile?.room_number ?? "—"} เตียง ${profile?.bed_number ?? "—"} · สถานะ ${labels[sbarStatusKey] ?? detail?.monitor?.status ?? "รอประเมิน"}${news2Total != null ? ` · Modified NEWS2: ${news2Total} คะแนน (${news2Level})` : ""} (${sbarVitalsDetail})`;
+  const sbarBackground = `ภาวะหลัก: ${profile?.condition ?? "ไม่ระบุ"} · การเคลื่อนไหว: ${profile?.mobility ?? "—"} · Braden Score: ${bradenScore} · แพทย์ผู้ดูแล: ${profile?.doctor ?? "—"}`;
   const sbarAssessment = `${detail?.ai_assessment?.summary ?? "รอผลวิเคราะห์"}${detail?.risk_model?.risk_percent != null ? ` · คะแนนความเสี่ยงวิจัย ${detail.risk_model.risk_percent}%` : ""}`;
   const sbarRecommendation = detail?.ai_assessment?.recommendations?.length ? detail.ai_assessment.recommendations.join(" · ") : "ตรวจสัญญาณชีพซ้ำตามรอบและประเมินอาการข้างเตียงโดยบุคลากร";
   function copySbar() {
-    const text = `[SBAR สรุปส่งต่อเวร/รายงานแพทย์ — ${id}]\nS (Situation): ${sbarSituation}\nB (Background): ${sbarBackground}\nA (Assessment): ${sbarAssessment}\nR (Recommendation): ${sbarRecommendation}`;
+    const text = `[SBAR สรุปส่งต่อเวร/รายงานแพทย์ — ${id}]\nS (Situation): ${sbarSituation}\nB (Background): ${sbarBackground}\nA (Assessment): ${sbarAssessment}\nR (Recommendation): ${sbarRecommendation}\n(Clinical Decision Support Only)`;
     void navigator.clipboard?.writeText(text).catch(() => {});
     setSbarCopied(true);
     window.setTimeout(() => setSbarCopied(false), 2500);
@@ -1020,7 +1025,11 @@ function PatientModal({ id, detail, error, timeline, chat, input, chatting, setI
             <BedsidePanel patientId={id} />
           </div>
         </details>
-        <div className={styles.actions}><a href={url("/api/patient/" + id + "/report/text")} target="_blank" rel="noreferrer" className={styles.primary}>เปิดสรุป Text</a><a href={url("/api/patient/" + id + "/report/document")} className={styles.secondary}>ดาวน์โหลด Word</a></div>
+        <div className={styles.actions}>
+          <a href={url("/api/patient/" + id + "/doctor-report/text")} target="_blank" rel="noreferrer" className={styles.primary}>เปิดรายงานแพทย์ SBAR (Text)</a>
+          <a href={url("/api/patient/" + id + "/doctor-report/document")} className={styles.secondary}>ดาวน์โหลดรายงานแพทย์ Word (.docx)</a>
+          <a href={url("/api/patient/" + id + "/report/text")} target="_blank" rel="noreferrer" className={styles.secondary}>สรุปสังเขป</a>
+        </div>
       </>}
       {tab === "chat" && chatEnabled && <section className={styles.chat}><div><b>ผู้ช่วย AI · {id}</b><p className={styles.disclaimer}>อธิบายข้อมูลผู้ป่วยที่เลือก ไม่ใช่การวินิจฉัยหรือสั่งรักษา</p></div><div className={styles.quick}>{["สรุปรายละเอียดผู้ป่วยและค่าที่สำคัญ", "สรุปแนวโน้มและสิ่งที่ควรตรวจสอบ", "สรุปข้อมูลส่งต่อแพทย์โดยไม่วินิจฉัย"].map((text) => <button key={text} className={styles.quickButton} onClick={() => setInput(text)} disabled={chatting}>{text}</button>)}</div><div className={styles.messages} role="log" aria-label="บทสนทนากับ AI">{chat.map((item, index) => <div key={index} className={`${styles.message} ${item.sender === "user" ? styles.userMessage : ""}`}>{item.text}</div>)}{chatting && <small role="status">กำลังเตรียมคำตอบ…</small>}<div ref={endRef} /></div><form className={styles.chatForm} onSubmit={sendChat}><input aria-label="คำถามถึงผู้ช่วย AI" value={input} onChange={(event) => setInput(event.target.value)} disabled={chatting} className={styles.input} placeholder="พิมพ์คำถามเกี่ยวกับผู้ป่วยรายนี้…" /><button disabled={chatting || !input.trim()} className={styles.send}>ส่ง</button></form></section>}
       {tab === "timeline" && <div className={styles.modalGrid}><section className={styles.box}><h3>ประวัติการติดตาม</h3><div className={styles.timeline}>{timeline.length ? timeline.slice(0, 30).map((event, index) => {

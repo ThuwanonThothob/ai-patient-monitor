@@ -27,7 +27,11 @@ from ai_models.workflow_evaluation import run_alert_workflow_evaluation
 from reporting import (
     create_patient_handoff_docx,
     create_report_docx,
+    create_physician_sbar_docx,
     format_dashboard_text,
+    format_patient_handoff_text,
+    format_physician_sbar_text,
+    generate_physician_sbar_report,
 )
 from patient_registry import PATIENT_PROFILES, PATIENT_LOGIN_PROFILES, TEST_PATIENT_PROFILES, ZONE_LABELS, get_patient_profile
 from pydantic import BaseModel, Field
@@ -45,6 +49,7 @@ import assistant_api
 import patient_views
 import bedside_monitor
 import agent_scenarios
+import line_notifier
 from test_simulation import TestPatientSimulator, seed_test_care
 from evidence_api import router as evidence_router
 from posture_api import router as posture_router
@@ -275,6 +280,36 @@ def persist_agent_alert(alert: dict) -> dict:
             (alert_id, alert["patient_id"], alert["reason"], created_at),
         )
         conn.commit()
+        try:
+            import line_notifier
+            if line_notifier.is_configured():
+                is_posture = "posture" in (episode_key or "") or "pressure" in (alert.get("reason") or "").lower()
+                dwell_sec = alert.get("dwell_seconds") or 7200
+                raw_posture = alert.get("posture") or "supine"
+                hotspot_desc, _ = line_notifier.get_anatomical_hotspot(raw_posture)
+                extra_data = {
+                    "posture": line_notifier.translate_posture(raw_posture),
+                    "dwell_minutes": max(1, int(dwell_sec // 60)),
+                    "hotspot": hotspot_desc,
+                    "braden_score": 11,
+                }
+                import threading
+                threading.Thread(
+                    target=line_notifier.dispatch_alert,
+                    args=(
+                        alert["patient_id"],
+                        alert["severity"],
+                        alert["reason"],
+                        alert["recommended_next_step"],
+                        vitals,
+                        alert.get("risk_percent"),
+                        "posture" if is_posture else "vital",
+                        extra_data,
+                    ),
+                    daemon=True,
+                ).start()
+        except Exception:
+            pass
         return {**alert, "alert_id": alert_id, "workflow_status": "NEW"}
     except Exception:
         try:
@@ -566,9 +601,14 @@ def get_dashboard_snapshot() -> dict:
     }
 
 #ไว้ลบข้อมูลเก่าตามเกณฑ์ PDPA (ลบเฉพาะ Raw Telemetry เก่า ห้ามลบ Audit Trail หรือ Alerts เด็ดขาด)
-def cleanup_old_logs(days_to_keep: int | None = None) -> dict:
-    retention_days = int(os.getenv("WARD_RETENTION_DAYS", "30")) if days_to_keep is None else int(days_to_keep)
-    cutoff_timestamp = time.time() - (retention_days * 24 * 60 * 60)
+def cleanup_old_logs(days_to_keep: int | None = None, hours_to_keep: float | None = None, vacuum: bool = False) -> dict:
+    if hours_to_keep is not None:
+        cutoff_timestamp = time.time() - (float(hours_to_keep) * 3600)
+        retention_label = f"{hours_to_keep} hours"
+    else:
+        retention_days = int(os.getenv("WARD_RETENTION_DAYS", "30")) if days_to_keep is None else int(days_to_keep)
+        cutoff_timestamp = time.time() - (retention_days * 24 * 60 * 60)
+        retention_label = f"{retention_days} days"
     pruned = {}
     conn = None
     try:
@@ -587,10 +627,19 @@ def cleanup_old_logs(days_to_keep: int | None = None) -> dict:
         if cursor.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='push_outbox'").fetchone():
             cursor.execute("DELETE FROM push_outbox WHERE state = 'SENT' AND updated_at < ?", (cutoff_timestamp,))
             pruned["push_outbox"] = cursor.rowcount
+        if cursor.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='nurse_agent_runs'").fetchone():
+            cursor.execute("DELETE FROM nurse_agent_steps WHERE run_id IN (SELECT id FROM nurse_agent_runs ORDER BY id DESC LIMIT -1 OFFSET 100)")
+            cursor.execute("DELETE FROM nurse_agent_runs WHERE id IN (SELECT id FROM nurse_agent_runs ORDER BY id DESC LIMIT -1 OFFSET 100)")
+            pruned["nurse_agent_runs"] = cursor.rowcount
         conn.commit()
         total_deleted = sum(pruned.values())
         if total_deleted > 0:
-            print(f"[PDPA Retention] Pruned {total_deleted} telemetry/observation records older than {retention_days} days: {pruned}")
+            print(f"[PDPA Retention] Pruned {total_deleted} telemetry/observation records older than {retention_label}: {pruned}")
+            if vacuum:
+                try:
+                    cursor.execute("VACUUM")
+                except Exception:
+                    pass
     except Exception as e:
         if conn:
             try:
@@ -1331,6 +1380,27 @@ def update_workflow_alert(alert_id: int, update: AlertWorkflowUpdate, request: R
         ),
     )
     conn.commit()
+
+    if requested_status == "ACKNOWLEDGED":
+        try:
+            ok, line_res = line_notifier.notify_family_on_acknowledgment(
+                patient_id=current[1],
+                actor=actor,
+                reason=current[3],
+                acknowledged_at=acknowledged_at,
+                note=note,
+            )
+            if ok:
+                cursor.execute(
+                    """INSERT INTO agent_audit_logs (alert_id, patient_id, action, actor, detail, created_at)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (alert_id, current[1], "FAMILY_ACK_SENT", "FamilyCareAgent",
+                     f"ส่งข้อความคลายกังวลถึงญาติผ่าน LINE (เตียง {current[1]}): แพทย์รับทราบแล้ว", now),
+                )
+                conn.commit()
+        except Exception as err:
+            print(f"[LineNotifier] Family notification on acknowledgment failed: {err}")
+
     cursor.execute("""
         SELECT id, patient_id, severity, reason, recommended_next_step,
                heart_rate, spo2, risk_percent, status, assigned_to, created_at,
@@ -1472,6 +1542,60 @@ def create_care_request(patient_id: str, payload: CareRequest, request: Request)
     }
 
 
+@app.get("/api/patient/{patient_id}/doctor-report")
+def get_physician_doctor_report(patient_id: str):
+    """Retrieve structured clinical SBAR report with NEWS2, Braden score, and turning compliance."""
+    patient_id = patient_id.upper()
+    profile = get_patient_profile(patient_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Patient not found in registry")
+    conn = db_connect()
+    try:
+        sbar = generate_physician_sbar_report(patient_id, profile=profile, db_conn=conn)
+    finally:
+        conn.close()
+    return sbar
+
+
+@app.get("/api/patient/{patient_id}/doctor-report/text", response_class=PlainTextResponse)
+def get_physician_doctor_report_text(patient_id: str):
+    """Retrieve formatted plain text / markdown physician SBAR report."""
+    patient_id = patient_id.upper()
+    profile = get_patient_profile(patient_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Patient not found in registry")
+    conn = db_connect()
+    try:
+        sbar = generate_physician_sbar_report(patient_id, profile=profile, db_conn=conn)
+    finally:
+        conn.close()
+    return format_physician_sbar_text(sbar)
+
+
+@app.get("/api/patient/{patient_id}/doctor-report/document")
+def get_physician_doctor_report_document(patient_id: str):
+    """Download Word (.docx) clinical SBAR report."""
+    patient_id = patient_id.upper()
+    profile = get_patient_profile(patient_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Patient not found in registry")
+    conn = db_connect()
+    try:
+        sbar = generate_physician_sbar_report(patient_id, profile=profile, db_conn=conn)
+    finally:
+        conn.close()
+    try:
+        doc_bytes = create_physician_sbar_docx(sbar)
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    filename = f"smart-ward-{patient_id}-physician-sbar.docx"
+    return StreamingResponse(
+        BytesIO(doc_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @app.get("/api/patient/{patient_id}/report/text", response_class=PlainTextResponse)
 def download_patient_report_text(patient_id: str):
     details = get_patient_details(patient_id)
@@ -1558,6 +1682,95 @@ async def download_report_document(section: str, include_ai_narrative: bool = Fa
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+@app.get("/api/notifications/line/status")
+def get_line_notification_status(request: Request):
+    import line_notifier
+    token = line_notifier.get_token()
+    token_len = len(token) if token else 0
+    configured = line_notifier.is_configured()
+    is_secret_only = (token_len == 32)
+    token_preview = f"{token[:6]}...{token[-4:]}" if token_len > 10 else "ยังไม่ได้ตั้งค่า"
+    channel = (
+        "LINE Official Account (Broadcast)" if os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
+        else "Telegram Bot" if os.getenv("TELEGRAM_BOT_TOKEN")
+        else "LINE Notify (Legacy)" if os.getenv("LINE_NOTIFY_TOKEN")
+        else "ยังไม่ได้เชื่อมต่อ"
+    )
+    return {
+        "configured": configured,
+        "channel": channel,
+        "token_len": token_len,
+        "token_preview": token_preview,
+        "is_secret_only": is_secret_only,
+        "quota": "ฟรี 500 ข้อความ/เดือน (LINE Free Plan)",
+        "target_bed": line_notifier.get_target_bed(),
+        "audience_mode": line_notifier.get_audience_mode(),
+        "bed_isolation": True,
+        "events": [
+            "สัญญาณชีพวิกฤต (SpO₂ ต่ำ / Modified NEWS2 ≥ 7)",
+            "ผู้ป่วยติดเตียงถึงรอบพลิกตัว (เกิน 2 ชม. เสี่ยงแผลกดทับ)",
+            "เซนเซอร์หลุด / งดแปลผล AI (Quality Gate Abstention)",
+            "ผู้ป่วยกดขอความช่วยเหลือฉุกเฉิน (SOS)",
+        ],
+    }
+
+@app.post("/api/notifications/line/settings")
+async def update_line_settings(request: Request):
+    import line_notifier
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Body must be a JSON object")
+    if "target_bed" in body and body["target_bed"]:
+        line_notifier.set_target_bed(str(body["target_bed"]))
+    if "audience_mode" in body and body["audience_mode"]:
+        line_notifier.set_audience_mode(str(body["audience_mode"]))
+    return {
+        "status": "ok",
+        "target_bed": line_notifier.get_target_bed(),
+        "audience_mode": line_notifier.get_audience_mode(),
+    }
+
+@app.post("/api/notifications/line/test")
+async def test_line_notification(request: Request):
+    import line_notifier
+    if not line_notifier.is_configured():
+        raise HTTPException(status_code=503, detail="LINE_CHANNEL_ACCESS_TOKEN ยังไม่ได้ระบุใน backend/.env")
+    
+    patient_id = line_notifier.get_target_bed()
+    alert_type = "test"
+    audience = line_notifier.get_audience_mode()
+
+    try:
+        body = await request.json()
+        if isinstance(body, dict):
+            if body.get("patient_id"):
+                patient_id = str(body["patient_id"]).strip()
+            if body.get("type"):
+                alert_type = str(body["type"]).strip()
+            if body.get("audience"):
+                audience = str(body["audience"]).strip()
+    except Exception:
+        pass
+
+    success, message = line_notifier.send_test_message(patient_id=patient_id, audience=audience, alert_type=alert_type)
+    if not success:
+        raise HTTPException(status_code=502, detail=f"ส่งข้อความ LINE ไม่สำเร็จ: {message}")
+    return {"status": "ok", "message": f"ส่งการแจ้งเตือนเตียง {patient_id} เข้า LINE สำเร็จเรียบร้อย"}
+
+@app.post("/api/maintenance/prune-data")
+def api_prune_demo_data(keep_hours: float = 2.0):
+    """Purge accumulated demo telemetry and compact SQLite database to keep storage minimal."""
+    pruned = cleanup_old_logs(hours_to_keep=keep_hours, vacuum=True)
+    return {
+        "status": "ok",
+        "message": f"ล้างข้อมูลจำลองเก่าที่เกิน {keep_hours} ชม. และบีบอัดฐานข้อมูลเรียบร้อยแล้ว",
+        "pruned": pruned,
+        "keep_hours": keep_hours,
+    }
 
 @app.websocket("/ws/vitals")
 async def websocket_endpoint(websocket: WebSocket):

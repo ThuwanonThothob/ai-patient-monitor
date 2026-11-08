@@ -127,7 +127,7 @@ function PatientWorkspace({ patient }: { patient: PatientRecord }) {
           </button>
           <button type="button" onClick={() => setShowSettings(false)}>ปิดหน้าต่างตั้งค่า</button>
         </div>
-        <NotificationPanel patient />
+        <NotificationPanel patient patientId={patient.patient_id} />
       </section>
     )}
     <nav className={s.nav} aria-label="หมวดข้อมูลผู้ป่วย">{patientSections.map((section) => <button key={section.key} aria-pressed={active === section.key} onClick={() => setActive(section.key)}><Icon name={section.icon} size={19} />{section.title}{section.key === 'chat' && Boolean(chatStatus.data?.unread) && <span className={s.unread} aria-label={`ข้อความใหม่ ${chatStatus.data?.unread}`}>{chatStatus.data?.unread}</span>}</button>)}</nav>

@@ -664,7 +664,7 @@ function ChatRoomPanel({
         className={s.pushDetails}
       >
         <summary>แจ้งเตือนบนมือถือ / ขณะปิดแอป</summary>
-        {showPush && <NotificationPanel patient={!staff} />}
+        {showPush && <NotificationPanel patient={!staff} patientId={selectedId} />}
       </details>
     </section>
   );

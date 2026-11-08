@@ -18,46 +18,54 @@ for regulatory status, data provenance, sensor-grade caveats, and safe fallbacks
 
 ```mermaid
 flowchart TD
-    subgraph SENSORS["1. อุปกรณ์ข้างเตียง & IoT Telemetry"]
-        D1["Pulse Oximeter (SpO2 & HR @ 1Hz)"]
-        D2["Respiratory Sensor (RR @ 1Hz)"]
-        D3["Smart In-Bed Pressure Mat (32x64 Grid)"]
-        GW["Bedside Telemetry Hub & Gateway"]
+    subgraph SENSORS["1. อุปกรณ์ข้างเตียง & IoT Telemetry (1 Hz)"]
+        D1["เครื่องวัดระดับออกซิเจนในเลือด SpO2 & ชีพจร HR"]
+        D2["เซนเซอร์วัดอัตราการหายใจ Respiratory Rate RR"]
+        D3["แผ่นวัดแรงกดอัจฉริยะใต้เบาะนอน 32x64 (2,048 จุด)"]
+        GW["Bedside Telemetry Hub & IoT Gateway"]
         D1 --> GW
         D2 --> GW
         D3 --> GW
     end
 
-    subgraph INGESTION["2. การรับข้อมูล & Data Quality Gate"]
-        GW -->|"MQTT / WebSocket (1Hz)"| QG{"Data Quality Gate & Check"}
-        QG -->|"ข้อมูลขาด / หลุดช่วงสรีรวิทยา"| ABSTAIN["Fail-Safe Abstention Mode (งดสรุปผล AI)"]
-        QG -->|"ข้อมูลสมบูรณ์ต่อเนื่อง 60 วินาที"| PIPE["Valid 1Hz Window Buffer"]
+    subgraph QUALITY["2. Data Quality Gate & Zero Hallucination Guardrail"]
+        GW -->|"MQTT & WebSockets 1Hz"| QG{"Data Quality & Freshness Gate"}
+        QG -->|"สายหลุด / สัญญาณรบกวน"| ABSTAIN["Fail-Safe Abstention Mode (งดแปลผล AI ทันที)"]
+        QG -->|"สัญญาณสดใหม่และต่อเนื่อง <=15s"| VALID["Valid 1Hz Window Stream"]
     end
 
-    subgraph AI_MODELS["3. AI Model Engine & การประเมินทางคลินิก"]
-        PIPE --> RF["Random Forest Regressor (พยากรณ์ HR, RR ล่วงหน้า 30s)"]
-        PIPE --> PERSIST["Persistence Baseline (ทำนาย SpO2 ล่วงหน้า 30s)"]
-        PIPE --> IF["Isolation Forest (ตรวจจับแพทเทิร์นผิดปกติ Unsupervised)"]
-        D3 --> PM["Spatial Pooling (8x16) + Logistic Regression (จำแนกท่านอน)"]
-        PIPE --> NEWS2["Modified NEWS2 Algorithm (คำนวณคะแนนสรีรวิทยา 0-9)"]
+    subgraph MODELS["3. Trained Clinical AI Engine & Algorithms"]
+        VALID --> NEWS2["Modified NEWS2 Deterioration Engine (RCP Scale 1)"]
+        VALID --> FORECAST["Neural Forecaster (พยากรณ์สัญญาณชีพล่วงหน้า 30s)"]
+        D3 --> POSTURE["Posture Classifier (PMD 128 Spatial Features -> หงาย/ซ้าย/ขวา)"]
+        D3 --> BRADEN["Braden Scale (11/23 High Risk) & Capillary Ischemia (>42 mmHg)"]
     end
 
-    subgraph AGENT_TEAM["4. AI Care Agent Team (ระบบกำกับความปลอดภัย)"]
-        RF --> AGENTS["VitalAlertAgent & Safety Supervisor"]
-        PERSIST --> AGENTS
-        IF --> AGENTS
-        PM --> AGENTS
-        NEWS2 --> AGENTS
-        ABSTAIN --> AGENTS
-        AGENTS --> AUDIT[("SQLite Audit Trail & Decision Logs")]
+    subgraph AGENTS["4. 24/7 AI Multi-Agent Care Team (ระบบทีม AI บริบาล 24 ชม.)"]
+        NEWS2 --> AGENT1["🛡️ Sentinel Triage Agent (เฝ้าระวังข้างเตียง 24 ชม.)"]
+        FORECAST --> AGENT1
+        POSTURE --> AGENT1
+        BRADEN --> AGENT1
+        ABSTAIN --> AGENT1
+
+        AGENT1 -->|"พบภาวะวิกฤต หรือครบ 2 ชม. พลิกตัว"| AGENT2["📋 Physician SBAR Agent (สรุปเวชระเบียนทางคลินิก)"]
     end
 
-    subgraph APPS["5. พอร์ทัลผู้ใช้งาน & การแสดงผล (Frontend)"]
-        AGENTS --> CENTRAL["Central Console (ศูนย์กลาง 60 เตียง)"]
-        AGENTS --> DOCTOR["Doctor Care Hub (แพทย์ 5 เตียง & SBAR)"]
-        AGENTS --> PATIENT["Patient Portal (พอร์ทัลผู้ป่วย & Range Gauges)"]
-        AGENTS --> PUSH["Web Push Notification (มือถือพยาบาลเวร)"]
-        AUDIT --> LAB["AI Evidence & Research Lab (Replay & Benchmarks)"]
+    subgraph CLINICAL_GATE["5. ศูนย์กลางเฝ้าระวัง & จุดยืนยันแพทย์ (Human-in-the-Loop)"]
+        AGENT2 --> DASHBOARD["Central Console (60 เตียง) & Doctor Care Hub"]
+        AGENT2 --> DOCX["Physician Clinical Reports (Text & Word .docx)"]
+        DASHBOARD --> REVIEW{"แพทย์และพยาบาลเวรเข้าตรวจผู้ป่วยจริง"}
+        REVIEW -->|"กดรับทราบ (Acknowledge Alert)"| ACK["Clinician Acknowledged"]
+    end
+
+    subgraph DISPATCH["6. ระบบส่งต่อ & การแจ้งเตือนอัตโนมัติ (Automated Closed-Loop)"]
+        ACK -->|"Auto Trigger"| AGENT3["💬 Family Care Agent (ถอดรหัสเป็นภาษาไทยเข้าใจง่าย)"]
+        AGENT3 --> BED_ISO{"Bed Isolation Filter (PDPA Locked)"}
+        BED_ISO -->|"ตรงเตียงเป้าหมาย (เช่น A001)"| LINE["LINE Messaging API (เด้งเข้ามือถือญาติทันที)"]
+        BED_ISO -->|"เตียงอื่น"| DROP["บล็อกข้อมูลข้ามเตียง (PDPA Protection)"]
+        
+        ACK --> AUDIT[("SQLite Audit Trail & PDPA Rolling Retention")]
+        ACK --> PORTAL["Patient Portal (ดูสถานะเตียงตนเอง & แชทกับแพทย์)"]
     end
 ```
 
